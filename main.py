@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from rto.strategy import OptimizationStrategy
-from utils import ConfigManager, DatabaseManager, post_process_optimization_result
+from utils import ConfigManager, DatabaseManager, post_process_optimization_result, get_cache_manager
 
 def run_optimization_cycle(config_manager: ConfigManager) -> None:
     """Run a single optimization cycle"""
@@ -58,16 +58,65 @@ def run_optimization_cycle(config_manager: ConfigManager) -> None:
 def main():
     """Main function to run continuous optimization"""
     config_manager = ConfigManager()
+    cache_manager = get_cache_manager()
+    cycle_count = 0
 
+    print("🚀 Starting process optimization with in-memory caching")
+    print("📊 Cache statistics will be shown every 10 cycles")
+    
     try:
         while True:
+            cycle_count += 1
+            print(f"\n{'='*60}")
+            print(f"🔄 Starting optimization cycle #{cycle_count}")
+            print(f"{'='*60}")
+            
             run_optimization_cycle(config_manager)
-            print("\nCycle will run in 1 minute...")
+            
+            # Show cache statistics every 10 cycles
+            if cycle_count % 10 == 0:
+                print(f"\n📊 Cache Statistics (Cycle #{cycle_count}):")
+                stats = cache_manager.get_cache_stats()
+                
+                # Show current config version
+                current_version = stats.get('current_config_version')
+                if current_version:
+                    print(f"  🔧 Current config version: {current_version}")
+                else:
+                    print(f"  🔧 Current config version: Not set")
+                
+                # Show cache stats for each type
+                for cache_type, cache_stats in stats.items():
+                    if cache_type != 'current_config_version':
+                        print(f"  {cache_type}: {cache_stats['active_items']} items active, {cache_stats['expired_items']} expired")
+                
+                # Clean up expired temp files periodically
+                print("🧹 Cleaning up expired temporary files...")
+                cache_manager.cleanup_expired_temp_files()
+            
+            print(f"\n⏱️  Cycle #{cycle_count} completed. Next cycle in 1 minute...")
             time.sleep(60)
+            
     except KeyboardInterrupt:
-        print("\nOptimization stopped by user")
+        print(f"\n🛑 Optimization stopped by user after {cycle_count} cycles")
+        print("📊 Final cache statistics:")
+        stats = cache_manager.get_cache_stats()
+        current_version = stats.get('current_config_version')
+        if current_version:
+            print(f"  🔧 Config version: {current_version}")
+        for cache_type, cache_stats in stats.items():
+            if cache_type != 'current_config_version':
+                print(f"  {cache_type}: {cache_stats['active_items']} items")
     except Exception as e:
-        print(f"\n❌ Optimization failed: {str(e)}")
+        print(f"\n❌ Optimization failed after {cycle_count} cycles: {str(e)}")
+        print("📊 Cache statistics at failure:")
+        stats = cache_manager.get_cache_stats()
+        current_version = stats.get('current_config_version')
+        if current_version:
+            print(f"  🔧 Config version: {current_version}")
+        for cache_type, cache_stats in stats.items():
+            if cache_type != 'current_config_version':
+                print(f"  {cache_type}: {cache_stats['active_items']} items")
 
 if __name__ == "__main__":
     main()
