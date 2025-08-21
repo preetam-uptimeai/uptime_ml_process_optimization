@@ -16,7 +16,7 @@ from utils import get_cache_manager, get_minio_client
 
 def show_cache_stats(cache_manager):
     """Display comprehensive cache statistics."""
-    print("📊 Cache Statistics")
+    print("Cache Statistics")
     print("=" * 60)
     
     stats = cache_manager.get_cache_stats()
@@ -24,16 +24,16 @@ def show_cache_stats(cache_manager):
     # Show current config version first
     current_version = stats.get('current_config_version')
     if current_version:
-        print(f"🔧 Current Config Version: {current_version}")
+        print(f"Current Config Version: {current_version}")
     else:
-        print(f"🔧 Current Config Version: Not set")
+        print(f"Current Config Version: Not set")
     
     # Show cached timestamp
     cached_timestamp = stats.get('cached_last_run_timestamp')
     if cached_timestamp:
-        print(f"🕒 Cached Last Run Timestamp: {cached_timestamp}")
+        print(f"Cached Last Run Timestamp: {cached_timestamp}")
     else:
-        print(f"🕒 Cached Last Run Timestamp: Not set")
+        print(f"Cached Last Run Timestamp: Not set")
     print()
     
     total_active = 0
@@ -48,18 +48,18 @@ def show_cache_stats(cache_manager):
         total_active += active
         total_expired += expired
         
-        print(f"📦 {cache_type.replace('_', ' ').title()}:")
-        print(f"   ✅ Active items: {active}")
-        print(f"   ⏳ Expired items: {expired}")
-        print(f"   📋 Total items: {cache_stats['total_items']}")
+        print(f"{cache_type.replace('_', ' ').title()}:")
+        print(f"   Active items: {active}")
+        print(f"   Expired items: {expired}")
+        print(f"   Total items: {cache_stats['total_items']}")
         
         if cache_stats['cache_keys']:
-            print(f"   🔑 Keys: {', '.join(cache_stats['cache_keys'][:3])}")
+            print(f"   Keys: {', '.join(cache_stats['cache_keys'][:3])}")
             if len(cache_stats['cache_keys']) > 3:
                 print(f"        ... and {len(cache_stats['cache_keys']) - 3} more")
         print()
     
-    print(f"📈 Summary:")
+    print(f"Summary:")
     print(f"   Total active items: {total_active}")
     print(f"   Total expired items: {total_expired}")
     print(f"   Overall cache efficiency: {total_active/(total_active+total_expired)*100:.1f}%" if (total_active+total_expired) > 0 else "   No items in cache")
@@ -67,7 +67,7 @@ def show_cache_stats(cache_manager):
 
 def clear_all_caches(cache_manager):
     """Clear all caches."""
-    print("🗑️ Clearing All Caches")
+    print("Clearing All Caches")
     print("=" * 60)
     
     # Show stats before clearing
@@ -87,13 +87,13 @@ def clear_all_caches(cache_manager):
         if isinstance(cache_stats, dict) and 'total_items' in cache_stats
     )
     
-    print(f"✅ Cleared {total_items_before - total_items_after} items from cache")
-    print("🎯 All caches are now empty")
+    print(f"Cleared {total_items_before - total_items_after} items from cache")
+    print("All caches are now empty")
 
 
 def cleanup_expired_files(cache_manager):
     """Clean up expired temporary files."""
-    print("🧹 Cleaning Up Expired Temporary Files")
+    print("Cleaning Up Expired Temporary Files")
     print("=" * 60)
     
     # Show cache stats before cleanup
@@ -108,13 +108,13 @@ def cleanup_expired_files(cache_manager):
     temp_files_after = stats_after.get('temp_files_cache', {}).get('total_items', 0)
     
     cleaned_files = temp_files_before - temp_files_after
-    print(f"✅ Cleaned up {cleaned_files} expired temporary files")
+    print(f"Cleaned up {cleaned_files} expired temporary files")
     print(f"📁 Remaining temporary files: {temp_files_after}")
 
 
 def test_cache_functionality(cache_manager):
     """Test basic cache functionality."""
-    print("🧪 Testing Cache Functionality")
+    print("Testing Cache Functionality")
     print("=" * 60)
     
     try:
@@ -135,24 +135,24 @@ def test_cache_functionality(cache_manager):
         config_items_after = end_stats.get('config_cache', {}).get('active_items', 0)
         
         if config_items_after > config_items_before:
-            print("   ✅ Config successfully cached")
+            print("   Config successfully cached")
         else:
-            print("   ✅ Config loaded (may have been already cached)")
+            print("   Config loaded (may have been already cached)")
         
         # Test second load (should be faster)
         print("2️⃣ Testing cached config loading...")
         config2 = config_manager.load_strategy_config_from_minio()
         
         if config == config2:
-            print("   ✅ Cached config is consistent")
+            print("   Cached config is consistent")
         else:
-            print("   ⚠️ Cached config differs from original")
+            print("   WARNING: Cached config differs from original")
         
-        print("🎉 Cache functionality test completed successfully")
+        print("Cache functionality test completed successfully")
         return True
         
     except Exception as e:
-        print(f"❌ Cache functionality test failed: {e}")
+        print(f"ERROR: Cache functionality test failed: {e}")
         return False
 
 
@@ -189,7 +189,7 @@ Examples:
         parser.print_help()
         return
     
-    print("🎛️ MinIO Cache Manager CLI")
+    print("MinIO Cache Manager CLI")
     print("=" * 60)
     print(f"📅 Started at: {datetime.now()}")
     print()
@@ -216,11 +216,11 @@ Examples:
     
     # Show final stats if we did operations
     if args.all or args.clear or args.cleanup:
-        print("📊 Final Cache Statistics:")
+        print("Final Cache Statistics:")
         print("-" * 30)
         show_cache_stats(cache_manager)
     
-    print(f"✅ Operations completed at: {datetime.now()}")
+    print(f"Operations completed at: {datetime.now()}")
 
 
 if __name__ == "__main__":
