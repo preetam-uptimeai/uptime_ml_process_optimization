@@ -18,7 +18,7 @@ from flask_cors import CORS
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from rto.strategy import OptimizationStrategy
-from utils import get_cache_manager, post_process_optimization_result
+from utils import get_cache_manager
 
 
 class APIService:
@@ -143,13 +143,10 @@ class APIService:
                 self.logger.info("Running optimization cycle...")
                 final_context = strategy.run_cycle(input_data)
                 
-                # Post-process results
-                post_process_optimization_result(final_context, strategy)
-                
-                # Extract results
+                # Extract results (no post-processing for API calls)
                 results = self._extract_optimization_results(final_context, strategy)
                 
-                self.logger.info(f"Optimization cycle completed successfully. Optimized {results['summary']['total_optimized_variables']} variables.")
+                self.logger.info(f"Optimization cycle completed successfully. Optimizer changed {results['summary']['total_optimizable_variables_changed']} optimizable variables out of {results['summary']['total_variables']} total variables.")
                 return results
                 
             finally:
@@ -171,59 +168,127 @@ class APIService:
             }
     
     def _extract_optimization_results(self, final_context, strategy) -> Dict[str, Any]:
-        """Extract and format optimization results."""
-        # Get optimized variable values
-        optimized_vars = {}
-        for var_id in strategy.get_optimizable_variable_ids():
-            var = final_context.get_variable(var_id)
-            if var.dof_value is not None:
-                optimized_vars[var_id] = {
-                    'current_value': var.current_value,
-                    'optimized_value': var.dof_value,
-                    'units': strategy.variables_config.get(var_id, {}).get('units', ''),
-                    'threshold': strategy.variables_config.get(var_id, {}).get('threshold', None)
-                }
+        """Extract and format comprehensive optimization results with before/after/delta for all variables."""
         
-        # Get predicted values
-        predicted_vars = {}
-        for var_id in strategy.get_predicted_variable_ids():
-            var = final_context.get_variable(var_id)
-            if var.dof_value is not None:
-                predicted_vars[var_id] = {
-                    'predicted_value': var.dof_value,
-                    'units': strategy.variables_config.get(var_id, {}).get('units', ''),
-                    'type': strategy.variables_config.get(var_id, {}).get('type', '')
-                }
+        # Comprehensive variable results
+        all_variables = {}
         
-        # Get constraint values
-        constraint_vars = {}
-        for var_id in strategy.get_constraint_variable_ids():
-            var = final_context.get_variable(var_id)
-            if var.dof_value is not None:
-                constraint_vars[var_id] = {
-                    'constraint_value': var.dof_value,
-                    'units': strategy.variables_config.get(var_id, {}).get('units', '')
-                }
+        # Get all variable IDs from strategy
+        all_var_ids = set()
+        all_var_ids.update(strategy.get_operative_variable_ids())
+        all_var_ids.update(strategy.get_informative_variable_ids())
+        all_var_ids.update(strategy.get_predicted_variable_ids())
+        all_var_ids.update(strategy.get_constraint_variable_ids())
+        all_var_ids.update(strategy.get_calculated_variable_ids())
         
-        # Get cost function value if available
+        # Process each variable
+        for var_id in all_var_ids:
+            try:
+                var = final_context.get_variable(var_id)
+                if var is None:
+                    continue
+                    
+                # Get variable configuration
+                var_config = strategy.variables_config.get(var_id, {})
+                units = var_config.get('units', '')
+                var_type = var_config.get('type', '')
+                
+                # Determine variable category
+                category = self._get_variable_category(var_id, strategy)
+                
+                # Get user input value and optimizer suggested value
+                user_input_value = var.current_value  # This is what user provided
+                optimizer_suggested_value = var.dof_value if var.dof_value is not None else var.current_value
+                
+                # Calculate delta (optimizer suggestion - user input)
+                delta = None
+                if user_input_value is not None and optimizer_suggested_value is not None:
+                    try:
+                        delta = float(optimizer_suggested_value) - float(user_input_value)
+                    except (ValueError, TypeError):
+                        delta = None
+                
+                # Build variable info
+                var_info = {
+                    'category': category,
+                    'user_input_value': user_input_value,
+                    'optimizer_suggested_value': optimizer_suggested_value,
+                    'delta': delta,
+                    'units': units,
+                    'type': var_type
+                }
+                
+                # Add category-specific information
+                if category == 'optimizable':
+                    var_info['threshold'] = var_config.get('threshold', None)
+                    var_info['bounds'] = var_config.get('bounds', None)
+                elif category == 'predicted':
+                    var_info['model_output'] = True
+                elif category == 'constraint':
+                    var_info['constraint_type'] = var_config.get('constraint_type', None)
+                    var_info['constraint_bounds'] = var_config.get('constraint_bounds', None)
+                
+                all_variables[var_id] = var_info
+                
+            except Exception as e:
+                self.logger.warning(f"Error processing variable {var_id}: {e}")
+                continue
+        
+        # Get cost function value
         cost_function_value = None
         cost_var = final_context.get_variable('cost_function_total')
         if cost_var and cost_var.dof_value is not None:
             cost_function_value = cost_var.dof_value
         
+        # Create categorized views for backward compatibility
+        optimized_vars = {var_id: info for var_id, info in all_variables.items() 
+                         if info['category'] == 'optimizable'}
+        predicted_vars = {var_id: info for var_id, info in all_variables.items() 
+                         if info['category'] == 'predicted'}
+        constraint_vars = {var_id: info for var_id, info in all_variables.items() 
+                          if info['category'] == 'constraint'}
+        
+        # Calculate summary statistics
+        total_with_optimizer_changes = sum(1 for info in all_variables.values() 
+                                          if info['delta'] is not None and abs(info['delta']) > 1e-6)
+        total_optimizable_changed = len([info for info in all_variables.values() 
+                                        if info['category'] == 'optimizable' and 
+                                        info['delta'] is not None and abs(info['delta']) > 1e-6])
+        
         return {
             'status': 'success',
             'timestamp': datetime.now().isoformat(),
-            'optimized_variables': optimized_vars,
-            'predicted_variables': predicted_vars,
-            'constraint_variables': constraint_vars,
+            'variables': all_variables,  # NEW: Comprehensive view of all variables
+            'optimized_variables': optimized_vars,  # Backward compatibility
+            'predicted_variables': predicted_vars,  # Backward compatibility
+            'constraint_variables': constraint_vars,  # Backward compatibility
             'cost_function_value': cost_function_value,
             'summary': {
-                'total_optimized_variables': len(optimized_vars),
+                'total_variables': len(all_variables),
+                'total_variables_with_optimizer_changes': total_with_optimizer_changes,
+                'total_optimizable_variables_changed': total_optimizable_changed,
                 'total_predicted_variables': len(predicted_vars),
-                'total_constraints': len(constraint_vars)
+                'total_constraints': len(constraint_vars),
+                'optimization_impact': f"{total_with_optimizer_changes}/{len(all_variables)} variables have optimizer suggestions different from user input"
             }
         }
+    
+    def _get_variable_category(self, var_id: str, strategy) -> str:
+        """Determine the category of a variable."""
+        if var_id in strategy.get_optimizable_variable_ids():
+            return 'optimizable'
+        elif var_id in strategy.get_predicted_variable_ids():
+            return 'predicted'
+        elif var_id in strategy.get_constraint_variable_ids():
+            return 'constraint'
+        elif var_id in strategy.get_operative_variable_ids():
+            return 'operative'
+        elif var_id in strategy.get_informative_variable_ids():
+            return 'informative'
+        elif var_id in strategy.get_calculated_variable_ids():
+            return 'calculated'
+        else:
+            return 'unknown'
     
     def _health_check(self):
         """Health check endpoint."""

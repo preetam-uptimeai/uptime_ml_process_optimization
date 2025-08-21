@@ -1,4 +1,5 @@
 import yaml
+import logging
 from datetime import datetime
 from typing import Optional
 from .minio_client import get_minio_client
@@ -11,6 +12,7 @@ class ConfigManager:
         self.deployed_config_file = deployed_config_file
         self.minio_client = get_minio_client()
         self.cache_manager = get_cache_manager()
+        self.logger = logging.getLogger("process_optimization.config_manager")
 
     def get_last_run_timestamp(self) -> Optional[datetime]:
         """Get the last run timestamp from cache or file"""
@@ -53,11 +55,11 @@ class ConfigManager:
         try:
             # Get the deployed config version
             version = self.get_deployed_config_version()
-            print(f"Loading config version {version} from MinIO...")
+            self.logger.info(f"Loading config version {version} from MinIO...")
             
             # Load config from MinIO
             config = self.minio_client.get_config_by_version(version)
-            print("Successfully loaded config from MinIO")
+            self.logger.info("Successfully loaded config from MinIO")
             return config
         except Exception as e:
             raise Exception(f"Failed to load strategy config from MinIO: {str(e)}")

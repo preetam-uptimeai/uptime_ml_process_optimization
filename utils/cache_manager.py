@@ -4,6 +4,7 @@ Provides in-memory caching to avoid redundant downloads from MinIO.
 """
 
 import threading
+import logging
 from typing import Any, Dict, Optional
 from datetime import datetime, timedelta
 import weakref
@@ -124,6 +125,9 @@ class CacheManager:
     
     def __init__(self):
         if not getattr(self, '_initialized', False):
+            # Setup logger
+            self.logger = logging.getLogger("process_optimization.cache_manager")
+            
             self.model_cache = MemoryCache(default_ttl_hours=24)
             self.scaler_cache = MemoryCache(default_ttl_hours=24)
             self.metadata_cache = MemoryCache(default_ttl_hours=24)
@@ -155,15 +159,15 @@ class CacheManager:
         cached_model = self.model_cache.get(cache_key)
         
         if cached_model is not None:
-            print(f"Using cached PyTorch model: {model_path}")
+            self.logger.debug(f"Using cached PyTorch model: {model_path}")
             return cached_model
         
-        print(f"Loading PyTorch model from MinIO: {model_path}")
+        self.logger.info(f"Loading PyTorch model from MinIO: {model_path}")
         model = loader_func(model_path)
         
         if model is not None:
             self.model_cache.set(cache_key, model)
-            print(f"Cached PyTorch model: {model_path}")
+            self.logger.debug(f"Cached PyTorch model: {model_path}")
         
         return model
     
@@ -182,15 +186,15 @@ class CacheManager:
         cached_path = self.temp_files_cache.get(cache_key)
         
         if cached_path is not None and Path(cached_path).exists():
-            print(f"Using cached model file: {model_path}")
+            self.logger.debug(f"Using cached model file: {model_path}")
             return cached_path
         
-        print(f"Downloading model from MinIO: {model_path}")
+        self.logger.info(f"Downloading model from MinIO: {model_path}")
         temp_path = loader_func(model_path)
         
         if temp_path is not None:
             self.temp_files_cache.set(cache_key, temp_path)
-            print(f"Cached model file: {model_path}")
+            self.logger.debug(f"Cached model file: {model_path}")
         
         return temp_path
     
@@ -209,15 +213,15 @@ class CacheManager:
         cached_scaler = self.scaler_cache.get(cache_key)
         
         if cached_scaler is not None:
-            print(f"Using cached scaler: {scaler_path}")
+            self.logger.debug(f"Using cached scaler: {scaler_path}")
             return cached_scaler
         
-        print(f"Loading scaler from MinIO: {scaler_path}")
+        self.logger.info(f"Loading scaler from MinIO: {scaler_path}")
         scaler = loader_func(scaler_path)
         
         if scaler is not None:
             self.scaler_cache.set(cache_key, scaler)
-            print(f"Cached scaler: {scaler_path}")
+            self.logger.debug(f"Cached scaler: {scaler_path}")
         
         return scaler
     
@@ -236,15 +240,15 @@ class CacheManager:
         cached_metadata = self.metadata_cache.get(cache_key)
         
         if cached_metadata is not None:
-            print(f"Using cached metadata: {metadata_path}")
+            self.logger.debug(f"Using cached metadata: {metadata_path}")
             return cached_metadata
         
-        print(f"Loading metadata from MinIO: {metadata_path}")
+        self.logger.info(f"Loading metadata from MinIO: {metadata_path}")
         metadata = loader_func(metadata_path)
         
         if metadata is not None:
             self.metadata_cache.set(cache_key, metadata)
-            print(f"Cached metadata: {metadata_path}")
+            self.logger.debug(f"Cached metadata: {metadata_path}")
         
         return metadata
     
@@ -262,18 +266,18 @@ class CacheManager:
             if self._current_config_version is None:
                 # First time setting version
                 self._current_config_version = new_version
-                print(f"Initial config version set: {new_version}")
+                self.logger.info(f"Initial config version set: {new_version}")
                 return False
             
             if self._current_config_version != new_version:
                 # Version changed - invalidate all caches
-                print(f"Config version changed: {self._current_config_version} -> {new_version}")
-                print("Invalidating all caches due to version change...")
+                self.logger.warning(f"Config version changed: {self._current_config_version} -> {new_version}")
+                self.logger.info("Invalidating all caches due to version change...")
                 
                 self._clear_all_caches_internal()
                 self._current_config_version = new_version
                 
-                print(f"Cache invalidated and updated to version: {new_version}")
+                self.logger.info(f"Cache invalidated and updated to version: {new_version}")
                 return True
             
             return False
@@ -292,7 +296,7 @@ class CacheManager:
         """Set the cached last run timestamp."""
         with self._timestamp_lock:
             self._cached_last_run_timestamp = timestamp
-            print(f"Cached last run timestamp: {timestamp}")
+            self.logger.debug(f"Cached last run timestamp: {timestamp}")
     
     def get_last_run_timestamp_with_cache(self, file_loader_func) -> Optional[datetime]:
         """
@@ -307,18 +311,18 @@ class CacheManager:
         with self._timestamp_lock:
             # Check if we have cached timestamp
             if self._cached_last_run_timestamp is not None:
-                print(f"Using cached last run timestamp: {self._cached_last_run_timestamp}")
+                self.logger.debug(f"Using cached last run timestamp: {self._cached_last_run_timestamp}")
                 return self._cached_last_run_timestamp
             
             # Load from file and cache it
-            print("Loading last run timestamp from file...")
+            self.logger.info("Loading last run timestamp from file...")
             timestamp = file_loader_func()
             
             if timestamp is not None:
                 self._cached_last_run_timestamp = timestamp
-                print(f"Cached last run timestamp from file: {timestamp}")
+                self.logger.debug(f"Cached last run timestamp from file: {timestamp}")
             else:
-                print("No last run timestamp found in file")
+                self.logger.warning("No last run timestamp found in file")
             
             return timestamp
     
@@ -355,19 +359,19 @@ class CacheManager:
         cached_config = self.config_cache.get(cache_key)
         
         if cached_config is not None and not version_changed:
-            print(f"Using cached config version: {version}")
+            self.logger.debug(f"Using cached config version: {version}")
             return cached_config
         
         if version_changed:
-            print(f"Loading fresh config after version change: {version}")
+            self.logger.info(f"Loading fresh config after version change: {version}")
         else:
-            print(f"Loading config from MinIO: version {version}")
+            self.logger.info(f"Loading config from MinIO: version {version}")
         
         config = loader_func(version)
         
         if config is not None:
             self.config_cache.set(cache_key, config)
-            print(f"Cached config version: {version}")
+            self.logger.debug(f"Cached config version: {version}")
         
         return config
     
@@ -376,7 +380,7 @@ class CacheManager:
         with self._version_lock:
             self._clear_all_caches_internal()
             self._current_config_version = None
-            print("Cleared all caches, reset version tracking, and cleared timestamp cache")
+            self.logger.info("Cleared all caches, reset version tracking, and cleared timestamp cache")
     
     def get_cache_stats(self) -> Dict[str, Any]:
         """
@@ -408,9 +412,9 @@ class CacheManager:
                     if file_path and Path(file_path).exists():
                         try:
                             Path(file_path).unlink()
-                            print(f"Cleaned up expired temp file: {file_path}")
+                            self.logger.debug(f"Cleaned up expired temp file: {file_path}")
                         except Exception as e:
-                            print(f"Failed to cleanup temp file {file_path}: {e}")
+                            self.logger.warning(f"Failed to cleanup temp file {file_path}: {e}")
                     expired_keys.append(key)
             
             # Remove expired entries from cache

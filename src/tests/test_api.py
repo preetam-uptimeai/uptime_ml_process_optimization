@@ -17,7 +17,9 @@ sys.path.append(os.path.dirname(__file__))
 def load_sample_config():
     """Load the sample config file."""
     try:
-        with open('config.yaml', 'r') as f:
+        # Look for config.yaml in the project root (two levels up from src/tests)
+        config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config.yaml')
+        with open(config_path, 'r') as f:
             return yaml.safe_load(f)
     except Exception as e:
         print(f"Error loading config: {e}")
