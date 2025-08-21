@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 import yaml
 from minio import Minio
 from minio.error import S3Error
+from .cache_manager import get_cache_manager
 
 
 class MinIOClient:
@@ -38,10 +39,11 @@ class MinIOClient:
         )
         self.config_bucket = "process-optimization"
         self.models_bucket = "process-optimization"
+        self.cache_manager = get_cache_manager()
     
     def get_config_by_version(self, version: str) -> Dict[str, Any]:
         """
-        Read configuration YAML file from MinIO by version.
+        Read configuration YAML file from MinIO by version with caching.
         
         Args:
             version: Version string (e.g., "1.0.0")
@@ -52,31 +54,34 @@ class MinIOClient:
         Raises:
             Exception: If config file not found or invalid
         """
-        try:
-            config_filename = f"configs/config-{version}.yaml"
-            
-            # Get object from MinIO
-            response = self.client.get_object(self.config_bucket, config_filename)
-            
-            # Read and parse YAML
-            config_data = yaml.safe_load(response.data.decode('utf-8'))
-            response.close()
-            response.release_conn()
-            
-            return config_data
-            
-        except S3Error as e:
-            if e.code == 'NoSuchKey':
-                raise FileNotFoundError(f"Config file {config_filename} not found in MinIO bucket {self.config_bucket}")
-            raise Exception(f"MinIO error while reading config: {e}")
-        except yaml.YAMLError as e:
-            raise Exception(f"Error parsing YAML config: {e}")
-        except Exception as e:
-            raise Exception(f"Error reading config from MinIO: {e}")
+        def _load_config_from_minio(version):
+            try:
+                config_filename = f"configs/config-{version}.yaml"
+                
+                # Get object from MinIO
+                response = self.client.get_object(self.config_bucket, config_filename)
+                
+                # Read and parse YAML
+                config_data = yaml.safe_load(response.data.decode('utf-8'))
+                response.close()
+                response.release_conn()
+                
+                return config_data
+                
+            except S3Error as e:
+                if e.code == 'NoSuchKey':
+                    raise FileNotFoundError(f"Config file {config_filename} not found in MinIO bucket {self.config_bucket}")
+                raise Exception(f"MinIO error while reading config: {e}")
+            except yaml.YAMLError as e:
+                raise Exception(f"Error parsing YAML config: {e}")
+            except Exception as e:
+                raise Exception(f"Error reading config from MinIO: {e}")
+        
+        return self.cache_manager.get_config_by_version(version, _load_config_from_minio)
     
     def get_pytorch_model(self, model_path: str) -> str:
         """
-        Download PyTorch model file (.pth) from MinIO to temporary location.
+        Download PyTorch model file (.pth) from MinIO to temporary location with caching.
         
         Args:
             model_path: Path to model file in MinIO (e.g., "saved_models/model.pth")
@@ -87,27 +92,30 @@ class MinIOClient:
         Raises:
             Exception: If model file not found or download fails
         """
-        try:
-            # Create temporary file
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pth')
-            temp_path = temp_file.name
-            temp_file.close()
-            
-            # Download from MinIO
-            self.client.fget_object(self.models_bucket, model_path, temp_path)
-            
-            return temp_path
-            
-        except S3Error as e:
-            if e.code == 'NoSuchKey':
-                raise FileNotFoundError(f"Model file {model_path} not found in MinIO bucket {self.models_bucket}")
-            raise Exception(f"MinIO error while downloading model: {e}")
-        except Exception as e:
-            raise Exception(f"Error downloading model from MinIO: {e}")
+        def _download_model_from_minio(model_path):
+            try:
+                # Create temporary file
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pth')
+                temp_path = temp_file.name
+                temp_file.close()
+                
+                # Download from MinIO
+                self.client.fget_object(self.models_bucket, model_path, temp_path)
+                
+                return temp_path
+                
+            except S3Error as e:
+                if e.code == 'NoSuchKey':
+                    raise FileNotFoundError(f"Model file {model_path} not found in MinIO bucket {self.models_bucket}")
+                raise Exception(f"MinIO error while downloading model: {e}")
+            except Exception as e:
+                raise Exception(f"Error downloading model from MinIO: {e}")
+        
+        return self.cache_manager.get_temp_model_path(model_path, _download_model_from_minio)
     
     def get_pickle_scaler(self, scaler_path: str) -> Any:
         """
-        Read pickle scaler file (.pkl) from MinIO and deserialize.
+        Read pickle scaler file (.pkl) from MinIO and deserialize with caching.
         
         Args:
             scaler_path: Path to scaler file in MinIO (e.g., "saved_scalers/scaler.pkl")
@@ -118,29 +126,32 @@ class MinIOClient:
         Raises:
             Exception: If scaler file not found or deserialization fails
         """
-        try:
-            # Get object from MinIO
-            response = self.client.get_object(self.models_bucket, scaler_path)
-            
-            # Deserialize pickle data
-            scaler_data = pickle.loads(response.data)
-            response.close()
-            response.release_conn()
-            
-            return scaler_data
-            
-        except S3Error as e:
-            if e.code == 'NoSuchKey':
-                raise FileNotFoundError(f"Scaler file {scaler_path} not found in MinIO bucket {self.models_bucket}")
-            raise Exception(f"MinIO error while reading scaler: {e}")
-        except pickle.PickleError as e:
-            raise Exception(f"Error deserializing pickle scaler: {e}")
-        except Exception as e:
-            raise Exception(f"Error reading scaler from MinIO: {e}")
+        def _load_scaler_from_minio(scaler_path):
+            try:
+                # Get object from MinIO
+                response = self.client.get_object(self.models_bucket, scaler_path)
+                
+                # Deserialize pickle data
+                scaler_data = pickle.loads(response.data)
+                response.close()
+                response.release_conn()
+                
+                return scaler_data
+                
+            except S3Error as e:
+                if e.code == 'NoSuchKey':
+                    raise FileNotFoundError(f"Scaler file {scaler_path} not found in MinIO bucket {self.models_bucket}")
+                raise Exception(f"MinIO error while reading scaler: {e}")
+            except pickle.PickleError as e:
+                raise Exception(f"Error deserializing pickle scaler: {e}")
+            except Exception as e:
+                raise Exception(f"Error reading scaler from MinIO: {e}")
+        
+        return self.cache_manager.get_pickle_scaler(scaler_path, _load_scaler_from_minio)
     
     def get_json_metadata(self, metadata_path: str) -> Dict[str, Any]:
         """
-        Read JSON metadata file from MinIO.
+        Read JSON metadata file from MinIO with caching.
         
         Args:
             metadata_path: Path to metadata file in MinIO (e.g., "saved_metadata/meta.json")
@@ -151,25 +162,28 @@ class MinIOClient:
         Raises:
             Exception: If metadata file not found or invalid JSON
         """
-        try:
-            # Get object from MinIO
-            response = self.client.get_object(self.models_bucket, metadata_path)
-            
-            # Parse JSON
-            metadata = json.loads(response.data.decode('utf-8'))
-            response.close()
-            response.release_conn()
-            
-            return metadata
-            
-        except S3Error as e:
-            if e.code == 'NoSuchKey':
-                raise FileNotFoundError(f"Metadata file {metadata_path} not found in MinIO bucket {self.models_bucket}")
-            raise Exception(f"MinIO error while reading metadata: {e}")
-        except json.JSONDecodeError as e:
-            raise Exception(f"Error parsing JSON metadata: {e}")
-        except Exception as e:
-            raise Exception(f"Error reading metadata from MinIO: {e}")
+        def _load_metadata_from_minio(metadata_path):
+            try:
+                # Get object from MinIO
+                response = self.client.get_object(self.models_bucket, metadata_path)
+                
+                # Parse JSON
+                metadata = json.loads(response.data.decode('utf-8'))
+                response.close()
+                response.release_conn()
+                
+                return metadata
+                
+            except S3Error as e:
+                if e.code == 'NoSuchKey':
+                    raise FileNotFoundError(f"Metadata file {metadata_path} not found in MinIO bucket {self.models_bucket}")
+                raise Exception(f"MinIO error while reading metadata: {e}")
+            except json.JSONDecodeError as e:
+                raise Exception(f"Error parsing JSON metadata: {e}")
+            except Exception as e:
+                raise Exception(f"Error reading metadata from MinIO: {e}")
+        
+        return self.cache_manager.get_json_metadata(metadata_path, _load_metadata_from_minio)
     
     def upload_file(self, bucket_name: str, object_name: str, file_path: str) -> bool:
         """
@@ -221,6 +235,23 @@ class MinIOClient:
                 Path(file_path).unlink(missing_ok=True)
             except Exception as e:
                 print(f"Warning: Could not remove temporary file {file_path}: {e}")
+    
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """
+        Get comprehensive cache statistics.
+        
+        Returns:
+            Dictionary with cache statistics
+        """
+        return self.cache_manager.get_cache_stats()
+    
+    def clear_all_caches(self) -> None:
+        """Clear all MinIO caches."""
+        self.cache_manager.clear_all_caches()
+    
+    def cleanup_expired_temp_files(self) -> None:
+        """Clean up expired temporary files from disk."""
+        self.cache_manager.cleanup_expired_temp_files()
 
 
 def get_minio_client() -> MinIOClient:

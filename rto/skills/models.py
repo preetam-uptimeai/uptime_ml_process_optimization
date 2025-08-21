@@ -7,6 +7,7 @@ import os
 import pandas as pd
 import sys
 import os
+import logging
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from utils.minio_client import get_minio_client
 
@@ -48,8 +49,9 @@ class InferenceModel(Skill):
         self.metadata_path = config['config'].get('metadata_path', None)
         self.smoothing = config['config'].get('smoothing', 'mean')
         
-        # Initialize MinIO client
+        # Initialize MinIO client and logger
         self.minio_client = get_minio_client()
+        self.logger = logging.getLogger("process_optimization.inference_model")
         
         # Load model and scaler if paths are provided
         self.model = None
@@ -72,26 +74,26 @@ class InferenceModel(Skill):
                 self.model = ANNModel(input_size=input_size, hidden_size=5, output_size=1, dropout_rate=0.2)
                 self.model.load_state_dict(torch.load(local_model_path, map_location=torch.device('cpu')))
                 self.model.eval()
-                print(f"Loaded model from MinIO: {minio_model_path}")
+                self.logger.info(f"Loaded model from MinIO: {minio_model_path}")
             
             # Load scaler from MinIO
             if self.scaler_path:
                 # Remove ../ prefix and add models prefix since we're loading from MinIO
                 minio_scaler_path = f"models/{self.scaler_path.replace('../', '')}"
                 self.scaler = self.minio_client.get_pickle_scaler(minio_scaler_path)
-                print(f"Loaded scaler from MinIO: {minio_scaler_path}")
-                print(f"Model inputs: {self.inputs}")
-                print(f"Model outputs: {self.outputs}")
+                self.logger.info(f"Loaded scaler from MinIO: {minio_scaler_path}")
+                self.logger.debug(f"Model inputs: {self.inputs}")
+                self.logger.debug(f"Model outputs: {self.outputs}")
             
             # Load metadata from MinIO (optional)
             if self.metadata_path:
                 # Remove ../ prefix and add models prefix since we're loading from MinIO
                 minio_metadata_path = f"models/{self.metadata_path.replace('../', '')}"
                 self.metadata = self.minio_client.get_json_metadata(minio_metadata_path)
-                print(f"Loaded metadata from MinIO: {minio_metadata_path}")
+                self.logger.debug(f"Loaded metadata from MinIO: {minio_metadata_path}")
                 
         except Exception as e:
-            print(f"Warning: Could not load model/scaler from MinIO: {e}")
+            self.logger.warning(f"Warning: Could not load model/scaler from MinIO: {e}")
             self.model = None
             self.scaler = None
             self.metadata = None
