@@ -27,14 +27,21 @@ def show_cache_stats(cache_manager):
         print(f"🔧 Current Config Version: {current_version}")
     else:
         print(f"🔧 Current Config Version: Not set")
+    
+    # Show cached timestamp
+    cached_timestamp = stats.get('cached_last_run_timestamp')
+    if cached_timestamp:
+        print(f"🕒 Cached Last Run Timestamp: {cached_timestamp}")
+    else:
+        print(f"🕒 Cached Last Run Timestamp: Not set")
     print()
     
     total_active = 0
     total_expired = 0
     
     for cache_type, cache_stats in stats.items():
-        if cache_type == 'current_config_version':
-            continue  # Skip version info, already shown
+        if cache_type in ['current_config_version', 'cached_last_run_timestamp']:
+            continue  # Skip version and timestamp info, already shown
             
         active = cache_stats['active_items']
         expired = cache_stats['expired_items']
@@ -65,14 +72,20 @@ def clear_all_caches(cache_manager):
     
     # Show stats before clearing
     stats_before = cache_manager.get_cache_stats()
-    total_items_before = sum(cache_stats['total_items'] for cache_stats in stats_before.values())
+    total_items_before = sum(
+        cache_stats['total_items'] for cache_stats in stats_before.values() 
+        if isinstance(cache_stats, dict) and 'total_items' in cache_stats
+    )
     
     # Clear caches
     cache_manager.clear_all_caches()
     
     # Show stats after clearing
     stats_after = cache_manager.get_cache_stats()
-    total_items_after = sum(cache_stats['total_items'] for cache_stats in stats_after.values())
+    total_items_after = sum(
+        cache_stats['total_items'] for cache_stats in stats_after.values() 
+        if isinstance(cache_stats, dict) and 'total_items' in cache_stats
+    )
     
     print(f"✅ Cleared {total_items_before - total_items_after} items from cache")
     print("🎯 All caches are now empty")

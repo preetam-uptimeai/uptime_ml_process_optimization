@@ -133,6 +133,11 @@ class CacheManager:
             # Version tracking for cache invalidation
             self._current_config_version = None
             self._version_lock = threading.RLock()
+            
+            # Timestamp caching
+            self._cached_last_run_timestamp = None
+            self._timestamp_lock = threading.RLock()
+            
             self._initialized = True
     
     def get_pytorch_model(self, model_path: str, loader_func) -> torch.nn.Module:
@@ -278,6 +283,45 @@ class CacheManager:
         with self._version_lock:
             return self._current_config_version
     
+    def get_cached_last_run_timestamp(self) -> Optional[datetime]:
+        """Get the cached last run timestamp."""
+        with self._timestamp_lock:
+            return self._cached_last_run_timestamp
+    
+    def set_cached_last_run_timestamp(self, timestamp: datetime) -> None:
+        """Set the cached last run timestamp."""
+        with self._timestamp_lock:
+            self._cached_last_run_timestamp = timestamp
+            print(f"🕒 Cached last run timestamp: {timestamp}")
+    
+    def get_last_run_timestamp_with_cache(self, file_loader_func) -> Optional[datetime]:
+        """
+        Get last run timestamp from cache or load from file.
+        
+        Args:
+            file_loader_func: Function to load timestamp from file if not cached
+            
+        Returns:
+            Last run timestamp or None if not available
+        """
+        with self._timestamp_lock:
+            # Check if we have cached timestamp
+            if self._cached_last_run_timestamp is not None:
+                print(f"✓ Using cached last run timestamp: {self._cached_last_run_timestamp}")
+                return self._cached_last_run_timestamp
+            
+            # Load from file and cache it
+            print("📥 Loading last run timestamp from file...")
+            timestamp = file_loader_func()
+            
+            if timestamp is not None:
+                self._cached_last_run_timestamp = timestamp
+                print(f"✓ Cached last run timestamp from file: {timestamp}")
+            else:
+                print("⚠️ No last run timestamp found in file")
+            
+            return timestamp
+    
     def _clear_all_caches_internal(self) -> None:
         """Internal method to clear all caches without version checking."""
         self.model_cache.clear()
@@ -285,6 +329,11 @@ class CacheManager:
         self.metadata_cache.clear()
         self.config_cache.clear()
         self.temp_files_cache.clear()
+        
+        # Clear timestamp cache as well
+        with self._timestamp_lock:
+            self._cached_last_run_timestamp = None
+        
         # Note: Temporary files cleanup will be handled separately
     
     def get_config_by_version(self, version: str, loader_func) -> Dict[str, Any]:
@@ -327,18 +376,19 @@ class CacheManager:
         with self._version_lock:
             self._clear_all_caches_internal()
             self._current_config_version = None
-            print("🗑️ Cleared all caches and reset version tracking")
+            print("🗑️ Cleared all caches, reset version tracking, and cleared timestamp cache")
     
     def get_cache_stats(self) -> Dict[str, Any]:
         """
-        Get comprehensive cache statistics including version info.
+        Get comprehensive cache statistics including version and timestamp info.
         
         Returns:
             Dictionary with all cache statistics
         """
-        with self._version_lock:
+        with self._version_lock, self._timestamp_lock:
             return {
                 'current_config_version': self._current_config_version,
+                'cached_last_run_timestamp': self._cached_last_run_timestamp,
                 'model_cache': self.model_cache.get_stats(),
                 'scaler_cache': self.scaler_cache.get_stats(),
                 'metadata_cache': self.metadata_cache.get_stats(),

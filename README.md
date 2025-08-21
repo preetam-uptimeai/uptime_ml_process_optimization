@@ -11,6 +11,7 @@ This application supports loading configuration and model files from MinIO objec
 - **Automatic Model Loading**: PyTorch models (.pth), scalers (.pkl), and metadata (.json) are loaded from MinIO
 - **Performance Optimization**: Models and configs are cached in memory and reused across optimization cycles
 - **Cache Management**: TTL-based expiration, statistics tracking, and cleanup utilities
+- **Timestamp Caching**: Last run timestamps are cached in memory for faster access
 - **Deployment Safety**: Cache automatically refreshes when new model versions are deployed
 - **Fallback Support**: Can still run with local files if needed
 
@@ -47,6 +48,12 @@ python test_cache_performance.py
 Test automatic cache invalidation on config version changes:
 ```bash
 python test_version_invalidation.py
+```
+
+### Timestamp Cache Testing
+Test timestamp caching functionality:
+```bash
+python test_timestamp_caching.py
 ```
 
 ### Cache Management CLI
@@ -92,6 +99,7 @@ The caching system provides significant performance improvements:
 - **💾 Memory Efficient**: Intelligent TTL-based cache expiration
 - **🔄 Consistency**: Same artifacts used across optimization cycles
 - **🔄 Version-Aware**: Automatic cache invalidation on config version changes
+- **🕒 Timestamp Caching**: Fast in-memory access to last run timestamps
 - **🚀 Deployment Ready**: Safe cache updates when new models are deployed
 - **📊 Monitoring**: Built-in cache statistics and version tracking
 - **🧹 Cleanup**: Automatic cleanup of expired temporary files

@@ -85,9 +85,16 @@ def main():
                 else:
                     print(f"  🔧 Current config version: Not set")
                 
+                # Show cached timestamp
+                cached_timestamp = stats.get('cached_last_run_timestamp')
+                if cached_timestamp:
+                    print(f"  🕒 Cached last run timestamp: {cached_timestamp}")
+                else:
+                    print(f"  🕒 Cached last run timestamp: Not set")
+                
                 # Show cache stats for each type
                 for cache_type, cache_stats in stats.items():
-                    if cache_type != 'current_config_version':
+                    if cache_type not in ['current_config_version', 'cached_last_run_timestamp']:
                         print(f"  {cache_type}: {cache_stats['active_items']} items active, {cache_stats['expired_items']} expired")
                 
                 # Clean up expired temp files periodically
@@ -104,8 +111,11 @@ def main():
         current_version = stats.get('current_config_version')
         if current_version:
             print(f"  🔧 Config version: {current_version}")
+        cached_timestamp = stats.get('cached_last_run_timestamp')
+        if cached_timestamp:
+            print(f"  🕒 Last run timestamp: {cached_timestamp}")
         for cache_type, cache_stats in stats.items():
-            if cache_type != 'current_config_version':
+            if cache_type not in ['current_config_version', 'cached_last_run_timestamp']:
                 print(f"  {cache_type}: {cache_stats['active_items']} items")
     except Exception as e:
         print(f"\n❌ Optimization failed after {cycle_count} cycles: {str(e)}")
@@ -114,8 +124,11 @@ def main():
         current_version = stats.get('current_config_version')
         if current_version:
             print(f"  🔧 Config version: {current_version}")
+        cached_timestamp = stats.get('cached_last_run_timestamp')
+        if cached_timestamp:
+            print(f"  🕒 Last run timestamp: {cached_timestamp}")
         for cache_type, cache_stats in stats.items():
-            if cache_type != 'current_config_version':
+            if cache_type not in ['current_config_version', 'cached_last_run_timestamp']:
                 print(f"  {cache_type}: {cache_stats['active_items']} items")
 
 if __name__ == "__main__":
