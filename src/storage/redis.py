@@ -78,51 +78,50 @@ class RedisCache:
         try:
             ttl = ttl_seconds or self.default_ttl
             
-            # Serialize value based on type
+            # Handle simple types with JSON metadata, complex types with direct pickle bytes
             if isinstance(value, (dict, list)):
                 try:
+                    # Try JSON first for simple dicts/lists
                     serialized_value = json.dumps(value)
-                    value_type = "json"
+                    cache_data = {
+                        "value": serialized_value,
+                        "type": "json",
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    result = self.connection.setex(key, ttl, json.dumps(cache_data))
                 except (TypeError, ValueError):
-                    # If JSON serialization fails, use pickle
-                    serialized_value = pickle.dumps(value).hex()
-                    value_type = "pickle"
+                    # Fallback to direct pickle bytes for complex dicts/lists
+                    pickled_data = pickle.dumps(value)
+                    result = self.connection.setex(key + ":pickle", ttl, pickled_data)
+                    
             elif isinstance(value, str):
-                serialized_value = value
-                value_type = "string"
+                cache_data = {
+                    "value": value,
+                    "type": "string",
+                    "timestamp": datetime.now().isoformat()
+                }
+                result = self.connection.setex(key, ttl, json.dumps(cache_data))
+                
             elif isinstance(value, (int, float)):
-                serialized_value = str(value)
-                value_type = "number"
+                cache_data = {
+                    "value": str(value),
+                    "type": "number",
+                    "timestamp": datetime.now().isoformat()
+                }
+                result = self.connection.setex(key, ttl, json.dumps(cache_data))
+                
             elif isinstance(value, datetime):
-                serialized_value = value.isoformat()
-                value_type = "datetime"
+                cache_data = {
+                    "value": value.isoformat(),
+                    "type": "datetime",
+                    "timestamp": datetime.now().isoformat()
+                }
+                result = self.connection.setex(key, ttl, json.dumps(cache_data))
+                
             else:
-                # Use pickle for complex objects
-                serialized_value = pickle.dumps(value).hex()
-                value_type = "pickle"
-            
-            # Store with metadata
-            cache_data = {
-                "value": serialized_value,
-                "type": value_type,
-                "timestamp": datetime.now().isoformat()
-            }
-            
-            try:
-                result = self.connection.setex(
-                    key, 
-                    ttl, 
-                    json.dumps(cache_data)
-                )
-            except (TypeError, ValueError) as e:
-                self.logger.error(f"JSON serialization failed for cache_data: {e}")
-                # Fallback: store the entire cache_data as pickle
-                serialized_cache_data = pickle.dumps(cache_data).hex()
-                result = self.connection.setex(
-                    key + ":pickle", 
-                    ttl, 
-                    serialized_cache_data
-                )
+                # Use direct pickle bytes for complex objects (no hex encoding)
+                pickled_data = pickle.dumps(value)
+                result = self.connection.setex(key + ":pickle", ttl, pickled_data)
             
             if result:
                 self.logger.debug(f"Cached key '{key}' with TTL {ttl}s")
@@ -143,38 +142,55 @@ class RedisCache:
             Cached value or None if not found/expired
         """
         try:
-            # Try normal key first
+            # Try normal key first (JSON metadata format)
             cached_data = self.connection.get(key)
             
-            # If not found, try pickle fallback key
-            if cached_data is None:
-                cached_data = self.connection.get(key + ":pickle")
-                if cached_data is not None:
-                    # This is a pickle-serialized cache_data
-                    cache_info = pickle.loads(bytes.fromhex(cached_data.decode()))
-                    value_type = cache_info["type"]
-                    serialized_value = cache_info["value"]
-                else:
-                    return None
-            else:
-                # Parse JSON-serialized cached data
+            if cached_data is not None:
+                # Parse JSON-serialized cached data with metadata
                 cache_info = json.loads(cached_data)
                 value_type = cache_info["type"]
                 serialized_value = cache_info["value"]
+                
+                # Deserialize based on type
+                if value_type == "json":
+                    return json.loads(serialized_value)
+                elif value_type == "string":
+                    return serialized_value
+                elif value_type == "number":
+                    return float(serialized_value) if '.' in serialized_value else int(serialized_value)
+                elif value_type == "datetime":
+                    return datetime.fromisoformat(serialized_value)
+                else:
+                    return serialized_value
             
-            # Deserialize based on type
-            if value_type == "json":
-                return json.loads(serialized_value)
-            elif value_type == "string":
-                return serialized_value
-            elif value_type == "number":
-                return float(serialized_value) if '.' in serialized_value else int(serialized_value)
-            elif value_type == "datetime":
-                return datetime.fromisoformat(serialized_value)
-            elif value_type == "pickle":
-                return pickle.loads(bytes.fromhex(serialized_value))
-            else:
-                return serialized_value
+            # If not found, try pickle key (direct bytes format)
+            pickled_data = self.connection.get(key + ":pickle")
+            if pickled_data is not None:
+                # Check if it's the old hex format or new direct bytes format
+                if isinstance(pickled_data, str):
+                    # Old hex format - try to decode from hex
+                    try:
+                        # Could be old hex-encoded cache_data
+                        cache_info = pickle.loads(bytes.fromhex(pickled_data))
+                        if isinstance(cache_info, dict) and "type" in cache_info:
+                            # Old format with metadata
+                            value_type = cache_info["type"]
+                            serialized_value = cache_info["value"]
+                            if value_type == "pickle":
+                                return pickle.loads(bytes.fromhex(serialized_value))
+                            else:
+                                return serialized_value
+                        else:
+                            # Old format direct pickle
+                            return cache_info
+                    except (ValueError, TypeError):
+                        # Not valid hex, treat as direct pickle bytes
+                        return pickle.loads(pickled_data.encode())
+                else:
+                    # New direct bytes format
+                    return pickle.loads(pickled_data)
+            
+            return None
                 
         except Exception as e:
             self.logger.error(f"Failed to get cache key '{key}': {e}")
@@ -191,10 +207,14 @@ class RedisCache:
             True if key was deleted, False otherwise
         """
         try:
-            result = self.connection.delete(key)
-            if result:
-                self.logger.debug(f"Deleted cache key '{key}'")
-            return bool(result)
+            # Delete both normal key and potential pickle key
+            result1 = self.connection.delete(key)
+            result2 = self.connection.delete(key + ":pickle")
+            
+            total_deleted = result1 + result2
+            if total_deleted > 0:
+                self.logger.debug(f"Deleted cache key '{key}' ({total_deleted} keys total)")
+            return total_deleted > 0
         except Exception as e:
             self.logger.error(f"Failed to delete cache key '{key}': {e}")
             return False
@@ -210,7 +230,8 @@ class RedisCache:
             True if key exists, False otherwise
         """
         try:
-            return bool(self.connection.exists(key))
+            # Check both normal key and pickle key
+            return bool(self.connection.exists(key) or self.connection.exists(key + ":pickle"))
         except Exception as e:
             self.logger.error(f"Failed to check cache key '{key}': {e}")
             return False
@@ -226,10 +247,14 @@ class RedisCache:
             Number of keys deleted
         """
         try:
+            # Get both normal keys and pickle keys matching the pattern
             keys = self.connection.keys(pattern)
-            if keys:
-                deleted = self.connection.delete(*keys)
-                self.logger.info(f"Deleted {deleted} keys matching pattern '{pattern}'")
+            pickle_keys = self.connection.keys(pattern + ":pickle")
+            all_keys = keys + pickle_keys
+            
+            if all_keys:
+                deleted = self.connection.delete(*all_keys)
+                self.logger.info(f"Deleted {deleted} keys matching pattern '{pattern}' (including pickle keys)")
                 return deleted
             return 0
         except Exception as e:

@@ -26,10 +26,12 @@ class OptimizationStrategy:
         'OptimizationSkill': OptimizationSkill,
     }
 
-    def __init__(self, config_path=None, use_minio=True):
+    def __init__(self, config_path=None, use_minio=True, configuration=None):
+        self.configuration = configuration
+        
         if use_minio:
-            # Load config from MinIO using StrategyManager
-            strategy_manager = StrategyManager()
+            # Load config from MinIO using StrategyManager with configuration
+            strategy_manager = StrategyManager(configuration=configuration)
             self.config = strategy_manager.load_strategy_config_from_minio()
         else:
             # Fallback to local file loading
@@ -52,7 +54,12 @@ class OptimizationStrategy:
             skill_class = self.SKILL_CLASS_MAP.get(config['class'])
             if not skill_class:
                 raise ValueError(f"Unknown skill class: {config['class']}")
-            skills[name] = skill_class(name, config)
+            
+            # Pass configuration to skills that need MinIO access (like InferenceModel)
+            if config['class'] == 'InferenceModel':
+                skills[name] = skill_class(name, config, configuration=self.configuration)
+            else:
+                skills[name] = skill_class(name, config)
             
             # Set strategy reference for optimizer skills
             if isinstance(skills[name], OptimizationSkill):

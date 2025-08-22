@@ -22,11 +22,15 @@ class StrategyCache:
         self.PREFIX_TIMESTAMP = "strategy:timestamp:"
         self.PREFIX_MODEL = "strategy:model:"
         self.PREFIX_SCALER = "strategy:scaler:"
+        self.PREFIX_VERSION = "strategy:version:"
         
-        # Default TTL for different types of data
-        self.TTL_CONFIG = 3600  # 1 hour for configs
+        # Default TTL for different types of data - optimized for frequent cycles
+        # Set long TTLs since cache invalidation is version-based, not time-based
+        self.TTL_CONFIG = 604800  # 7 days for configs (only cleared on version change)
         self.TTL_TIMESTAMP = 86400  # 24 hours for timestamps
-        self.TTL_MODEL = 7200  # 2 hours for models
+        self.TTL_MODEL = 604800  # 7 days for models (only cleared on version change)
+        self.TTL_SCALER = 604800  # 7 days for scalers (only cleared on version change)
+        self.TTL_VERSION = 86400  # 24 hours for version tracking
     
     def get_last_run_timestamp_with_cache(self, loader_func: Callable[[], Optional[datetime]]) -> Optional[datetime]:
         """
@@ -203,13 +207,115 @@ class StrategyCache:
         cache_key = f"{self.PREFIX_SCALER}{scaler_path}"
         
         try:
-            result = self.cache.set(cache_key, scaler_data, self.TTL_MODEL)
+            result = self.cache.set(cache_key, scaler_data, self.TTL_SCALER)
             if result:
                 self.logger.debug(f"Cached scaler {scaler_path}")
             return result
         except Exception as e:
             self.logger.error(f"Failed to cache scaler: {e}")
             return False
+    
+    def invalidate_cached_model(self, model_path: str) -> bool:
+        """
+        Invalidate a specific cached model.
+        
+        Args:
+            model_path: Path to the model file in MinIO
+            
+        Returns:
+            True if successfully invalidated, False otherwise
+        """
+        cache_key = f"{self.PREFIX_MODEL}{model_path}"
+        
+        try:
+            self.cache.delete(cache_key)
+            self.logger.info(f"Invalidated cached model: {model_path}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to invalidate cached model: {e}")
+            return False
+    
+    def invalidate_cached_scaler(self, scaler_path: str) -> bool:
+        """
+        Invalidate a specific cached scaler.
+        
+        Args:
+            scaler_path: Path to the scaler file in MinIO
+            
+        Returns:
+            True if successfully invalidated, False otherwise
+        """
+        cache_key = f"{self.PREFIX_SCALER}{scaler_path}"
+        
+        try:
+            self.cache.delete(cache_key)
+            self.logger.info(f"Invalidated cached scaler: {scaler_path}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to invalidate cached scaler: {e}")
+            return False
+    
+    def invalidate_cached_config(self, config_version: str) -> bool:
+        """
+        Invalidate a specific cached config.
+        
+        Args:
+            config_version: Version of the config to invalidate
+            
+        Returns:
+            True if successfully invalidated, False otherwise
+        """
+        cache_key = f"{self.PREFIX_CONFIG}{config_version}"
+        
+        try:
+            self.cache.delete(cache_key)
+            self.logger.info(f"Invalidated cached config: {config_version}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to invalidate cached config: {e}")
+            return False
+    
+    def check_version_and_invalidate_if_needed(self, current_version: str) -> bool:
+        """
+        Check if version has changed and invalidate cache if needed.
+        
+        Args:
+            current_version: Current strategy configuration version
+            
+        Returns:
+            True if cache was invalidated, False otherwise
+        """
+        version_key = f"{self.PREFIX_VERSION}current"
+        
+        try:
+            cached_version = self.cache.get(version_key)
+            
+            if cached_version != current_version:
+                self.logger.info(f"Version changed from {cached_version} to {current_version}, invalidating cache...")
+                
+                # Clear all strategy-related caches
+                cleared_counts = self.clear_all_caches()
+                
+                # Set new version
+                self.cache.set(version_key, current_version, self.TTL_VERSION)
+                
+                self.logger.info(f"Cache invalidated. Cleared {sum(cleared_counts.values())} items")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"Error checking version: {e}")
+            return False
+    
+    def get_current_cached_version(self) -> Optional[str]:
+        """Get the currently cached strategy version."""
+        version_key = f"{self.PREFIX_VERSION}current"
+        try:
+            return self.cache.get(version_key)
+        except Exception as e:
+            self.logger.error(f"Error getting cached version: {e}")
+            return None
     
     def clear_all_caches(self) -> Dict[str, int]:
         """
@@ -243,32 +349,69 @@ class StrategyCache:
             Dictionary with cache statistics
         """
         try:
+            # Get current cached version
+            current_version = self.get_current_cached_version()
+            
+            # Get last run timestamp
+            timestamp_key = f"{self.PREFIX_TIMESTAMP}last_run"
+            cached_timestamp = self.cache.get(timestamp_key)
+            
             # Get Redis stats
             redis_stats = self.cache.get_stats()
             
-            # Count keys by prefix
+            # Count keys by prefix with detailed structure
             key_counts = {}
             for prefix, name in [
                 (self.PREFIX_CONFIG, 'configs'),
                 (self.PREFIX_TIMESTAMP, 'timestamps'),
                 (self.PREFIX_MODEL, 'models'),
-                (self.PREFIX_SCALER, 'scalers')
+                (self.PREFIX_SCALER, 'scalers'),
+                (self.PREFIX_VERSION, 'versions')
             ]:
                 try:
                     keys = self.cache.connection.keys(f"{prefix}*")
-                    key_counts[name] = len(keys) if keys else 0
+                    count = len(keys) if keys else 0
+                    key_counts[name] = {
+                        'active_items': count,
+                        'expired_items': 0  # Redis handles TTL automatically
+                    }
                 except:
-                    key_counts[name] = 0
+                    key_counts[name] = {
+                        'active_items': 0,
+                        'expired_items': 0
+                    }
+            
+            # Format redis stats properly
+            formatted_redis_stats = {
+                'active_items': redis_stats.get('used_memory_human', 'Unknown'),
+                'expired_items': redis_stats.get('expired_keys', 0)
+            }
+            
+            # Format strategy cache counts properly  
+            formatted_strategy_counts = {
+                'active_items': sum(counts['active_items'] for counts in key_counts.values()),
+                'expired_items': sum(counts['expired_items'] for counts in key_counts.values())
+            }
             
             return {
-                'redis_stats': redis_stats,
-                'strategy_cache_counts': key_counts,
+                'current_config_version': current_version,
+                'cached_last_run_timestamp': str(cached_timestamp) if cached_timestamp else None,
+                'redis_stats': formatted_redis_stats,
+                'strategy_cache_counts': formatted_strategy_counts,
+                'cache_details': key_counts,
                 'cache_efficiency': self._calculate_cache_efficiency(redis_stats)
             }
             
         except Exception as e:
             self.logger.error(f"Failed to get cache stats: {e}")
-            return {}
+            return {
+                'current_config_version': None,
+                'cached_last_run_timestamp': None,
+                'redis_stats': {'active_items': 0, 'expired_items': 0},
+                'strategy_cache_counts': {'active_items': 0, 'expired_items': 0},
+                'cache_details': {},
+                'cache_efficiency': 0.0
+            }
     
     def _calculate_cache_efficiency(self, redis_stats: Dict) -> float:
         """Calculate cache hit ratio."""

@@ -52,8 +52,8 @@ class OptimizationService:
             self.cycle_count += 1
             self.logger.info(f"Starting optimization cycle #{self.cycle_count}")
             
-            # Load strategy from MinIO
-            strategy = OptimizationStrategy(use_minio=True)
+            # Load strategy from MinIO with configuration
+            strategy = OptimizationStrategy(use_minio=True, configuration=self.configuration)
             self.logger.debug(f"Model outputs: {strategy.get_predicted_variable_ids()}")
             self.logger.info("Strategy loaded successfully from MinIO")
 
@@ -74,6 +74,9 @@ class OptimizationService:
             last_timestamp = result['timestamp']
             self.logger.info(f"Running optimization cycle for timestamp: {last_timestamp}")
             latest_data = result['data']
+            
+            self.logger.info(f"Total variables fetched from DB: {len(latest_data)}")
+            self.logger.debug(f"All fetched data: {latest_data}")
 
             # Check for missing variables
             missing_vars = []

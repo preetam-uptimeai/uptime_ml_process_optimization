@@ -45,15 +45,26 @@ class ProcessOptimizationApp:
         self.optimization_thread: Optional[threading.Thread] = None
         self.shutdown_event = threading.Event()
         
-        # Setup signal handlers
+        # Setup signal handlers for faster shutdown
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
+        
+        # Set a secondary signal handler for immediate termination (double Ctrl+C)
+        self._shutdown_count = 0
     
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully."""
+        self._shutdown_count += 1
         log = structlog.get_logger()
-        log.info(f"Received signal {signum}, initiating graceful shutdown...")
-        self.shutdown()
+        
+        if self._shutdown_count == 1:
+            log.info(f"Received signal {signum}, initiating graceful shutdown...")
+            log.info("Press Ctrl+C again for immediate termination")
+            self.shutdown()
+        else:
+            log.warning("Force shutdown requested!")
+            log.info("Forcing immediate process termination")
+            os._exit(1)  # Immediate termination without cleanup
     
     def _run_continuous_optimization(self):
         """Run continuous optimization in background thread."""
@@ -92,7 +103,8 @@ class ProcessOptimizationApp:
                 self.api_service = APIService(
                     host=self.api_host,
                     port=self.api_port,
-                    debug=self.debug
+                    debug=self.debug,
+                    configuration=self.configuration
                 )
                 self.api_service.start()
             
@@ -127,12 +139,12 @@ class ProcessOptimizationApp:
             log.info("Stopping API service...")
             self.api_service.stop()
         
-        # Wait for optimization thread to finish
+        # Wait for optimization thread to finish (shorter timeout for faster shutdown)
         if self.optimization_thread and self.optimization_thread.is_alive():
             log.info("Waiting for optimization service to stop...")
-            self.optimization_thread.join(timeout=10)
+            self.optimization_thread.join(timeout=3)  # Reduced from 10 to 3 seconds
             if self.optimization_thread.is_alive():
-                log.warning("Optimization thread did not stop gracefully")
+                log.warning("Optimization thread did not stop gracefully, forcing shutdown")
         
         log.info("Application shutdown complete")
 
