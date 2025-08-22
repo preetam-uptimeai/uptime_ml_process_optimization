@@ -1,0 +1,70 @@
+services:
+  # Redis Cache Service
+  redis:
+    image: redis:7-alpine
+    container_name: process-optimization-redis-dev
+    ports:
+      - "6380:6379"  # Changed to avoid conflicts
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - process_optimization_dev_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # MinIO Object Storage Service
+  minio:
+    image: minio/minio:latest
+    container_name: process-optimization-minio-dev
+    ports:
+      - "9002:9000"  # Changed to avoid conflicts
+      - "9003:9001"  # Changed to avoid conflicts
+    environment:
+      MINIO_ROOT_USER: user
+      MINIO_ROOT_PASSWORD: password
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:9003
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - process_optimization_dev_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: unless-stopped
+
+  # MinIO client for initial setup
+  minio-client:
+    image: minio/mc:latest
+    container_name: process-optimization-minio-client-dev
+    depends_on:
+      - minio
+    networks:
+      - process_optimization_dev_network
+    entrypoint: >
+      /bin/sh -c "
+      sleep 10;
+      /usr/bin/mc alias set myminio http://minio:9000 user password;
+      /usr/bin/mc mb myminio/process-optimization --ignore-existing;
+      /usr/bin/mc policy set public myminio/process-optimization;
+      echo 'MinIO setup completed';
+      exit 0
+      "
+    restart: "no"
+
+volumes:
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+
+networks:
+  process_optimization_dev_network:
+    driver: bridge

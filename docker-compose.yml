@@ -1,46 +1,125 @@
 services:
+  # Redis Cache Service
+  redis:
+    image: redis:7-alpine
+    container_name: process-optimization-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - process_optimization_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # # PostgreSQL Database Service (optional - if you want to include it)
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: process-optimization-postgres
+  #   ports:
+  #     - "5432:5432"
+  #   environment:
+  #     POSTGRES_DB: process_optimization
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: Uptime@975
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   networks:
+  #     - process_optimization_network
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U postgres"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
+  #   restart: unless-stopped
+
+  # MinIO Object Storage Service
   minio:
     image: minio/minio:latest
-    container_name: minio-server
+    container_name: process-optimization-minio
     ports:
-      - "9090:9000"
-      - "9091:9001"
+      - "9000:9000"
+      - "9001:9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin123
-      MINIO_BROWSER_REDIRECT_URL: http://localhost:9091
+      MINIO_ROOT_USER: user
+      MINIO_ROOT_PASSWORD: password
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
     networks:
-      - minio_network
+      - process_optimization_network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
       timeout: 20s
       retries: 3
+    restart: unless-stopped
 
   # MinIO client for initial setup
   minio-client:
     image: minio/mc:latest
-    container_name: minio-client
+    container_name: process-optimization-minio-client
     depends_on:
       - minio
     networks:
-      - minio_network
+      - process_optimization_network
     entrypoint: >
       /bin/sh -c "
-      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin123;
+      /usr/bin/mc alias set myminio http://minio:9000 user password;
       /usr/bin/mc mb myminio/process-optimization --ignore-existing;
       /usr/bin/mc policy set public myminio/process-optimization;
       echo 'MinIO setup completed';
       tail -f /dev/null
       "
+    restart: "no"
+
+  # # Process Optimization Application
+  # process-optimization:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: uptime-ml-process-optimization
+  #   ports:
+  #     - "5000:5000"
+  #   environment:
+  #     - PYTHONPATH=/app/src
+  #   volumes:
+  #     - ./config.docker.yaml:/app/config.yaml:ro
+  #     - ./process-optimization-strategy-config.yaml:/app/process-optimization-strategy-config.yaml:ro
+  #     - logs_data:/app/logs
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #     postgres:
+  #       condition: service_healthy
+  #     minio:
+  #       condition: service_healthy
+  #   networks:
+  #     - process_optimization_network
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 60s
+  #   restart: unless-stopped
 
 volumes:
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
   minio_data:
+    driver: local
+  logs_data:
     driver: local
 
 networks:
-  minio_network:
+  process_optimization_network:
     driver: bridge

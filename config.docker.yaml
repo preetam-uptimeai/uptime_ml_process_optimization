@@ -1,0 +1,30 @@
+meta:
+  id: process-optimization.docker
+log:
+  level: DEBUG
+app:
+  mode: hybrid  # continuous, api, hybrid
+api:
+  host: 0.0.0.0
+  port: 5000
+  debug: false
+redis:
+  host: redis
+  port: 6379
+database:
+  host: postgres
+  port: 5432
+  dbname: process_optimization
+  user: postgres
+  password: Uptime@975
+storage:
+  minio:
+    endpoint: minio:9000
+    access_key: user
+    secret_key: password
+    bucket: process-optimization
+optimization:
+  interval_seconds: 300
+  max_iterations: 1000
+  tolerance: 1e-6
+  config_file: process-optimization-config.yaml

@@ -9,7 +9,7 @@ import sys
 import os
 import logging
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from utils.minio_client import get_minio_client
+from storage.minio import get_minio_client
 
 class ANNModel(nn.Module):
     def __init__(self, input_size=5, hidden_size=5, output_size=1, dropout_rate=0.2):

@@ -6,7 +6,7 @@ app:
   mode: hybrid  # continuous, api, hybrid
 api:
   host: 0.0.0.0
-  port: 5001  # Changed to avoid conflicts with AirPlay
+  port: 5002  # Changed to avoid conflicts
   debug: true
 redis:
   host: localhost
