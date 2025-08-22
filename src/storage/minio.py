@@ -4,6 +4,7 @@ MinIO client utilities for reading configuration and model files from MinIO stor
 
 import io
 import json
+import os
 import pickle
 import tempfile
 import time
@@ -17,6 +18,36 @@ from minio.error import S3Error
 # Note: Import moved to avoid circular dependency
 
 logger = structlog.get_logger(__name__)
+
+
+def _create_organized_temp_file(suffix: str, cache_dir: str = "uptime_ml_process_opt_cache") -> str:
+    """
+    Create a temporary file in an organized subdirectory for easy cleanup.
+    
+    Args:
+        suffix: File extension (e.g., '.pth', '.pkl')
+        prefix: Prefix for the temp subdirectory
+        
+    Returns:
+        Path to the created temporary file
+    """
+    # Create organized temp directory
+    base_temp_dir = tempfile.gettempdir()
+    organized_temp_dir = os.path.join(base_temp_dir, cache_dir)
+    
+    # Ensure the directory exists
+    os.makedirs(organized_temp_dir, exist_ok=True)
+    
+    # Create temp file in the organized directory
+    temp_file = tempfile.NamedTemporaryFile(
+        delete=False, 
+        suffix=suffix, 
+        dir=organized_temp_dir
+    )
+    temp_path = temp_file.name
+    temp_file.close()
+    
+    return temp_path
 
 
 class MinIOClient:
@@ -170,11 +201,9 @@ class MinIOClient:
                        bucket=self.models_bucket)
             
             try:
-                # Create temporary file
-                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pth')
-                temp_path = temp_file.name
-                temp_file.close()
-                logger.debug("Created temporary file", temp_path=temp_path)
+                # Create organized temporary file
+                temp_path = _create_organized_temp_file('.pth')
+                logger.debug("Created organized temporary file", temp_path=temp_path)
                 
                 # Download from MinIO
                 self.client.fget_object(self.models_bucket, model_path, temp_path)
@@ -511,17 +540,17 @@ class MinIOClient:
         """
         logger.info("Performing cleanup due to strategy version change")
         
-        # This would typically be called by the strategy manager
-        # when version change is detected. For now, we set up the framework.
-        import tempfile
-        import os
+        # Get our organized temp directory
+        base_temp_dir = tempfile.gettempdir()
+        organized_temp_dir = Path(os.path.join(base_temp_dir, "uptime_ml_process_opt_cache"))
         
-        # Get temp directory and look for our temp files
-        temp_dir = Path(tempfile.gettempdir())
+        if not organized_temp_dir.exists():
+            logger.debug("No organized temp directory found, nothing to clean")
+            return
         
-        # Find temp files that might be ours (with .pth extension)
+        # Find temp files in our organized directory
         temp_files = []
-        for temp_file in temp_dir.glob("tmp*"):
+        for temp_file in organized_temp_dir.glob("*"):
             if temp_file.suffix in ['.pth', '.pkl'] and temp_file.is_file():
                 try:
                     # Check if file is old enough to be from previous versions
@@ -535,11 +564,52 @@ class MinIOClient:
             # Force cleanup of old temp files
             self.cleanup_temp_files(temp_files, force_cleanup=True)
             logger.info(f"Cleaned up {len(temp_files)} old temporary files due to version change")
+        else:
+            logger.debug("No old temporary files found for cleanup")
     
     def cleanup_expired_temp_files(self) -> None:
         """Clean up expired temporary files from disk."""
         # Redis TTL handles cleanup automatically
         logger.debug("Cleanup of expired temp files is handled automatically by Redis TTL")
+    
+    def get_temp_directory_path(self) -> str:
+        """
+        Get the path to the organized temp directory for manual cleanup.
+        
+        Returns:
+            Path to the uptime_ml_process_opt_cache temp directory
+        """
+        base_temp_dir = tempfile.gettempdir()
+        organized_temp_dir = os.path.join(base_temp_dir, "uptime_ml_process_opt_cache")
+        return organized_temp_dir
+    
+    def manual_cleanup_temp_directory(self) -> int:
+        """
+        Manually clean up all files in the organized temp directory.
+        Useful for manual maintenance.
+        
+        Returns:
+            Number of files cleaned up
+        """
+        temp_dir = Path(self.get_temp_directory_path())
+        
+        if not temp_dir.exists():
+            logger.info("No temp directory found, nothing to clean")
+            return 0
+        
+        files_cleaned = 0
+        for temp_file in temp_dir.glob("*"):
+            if temp_file.is_file():
+                try:
+                    temp_file.unlink()
+                    files_cleaned += 1
+                    logger.debug("Deleted temp file", file_path=str(temp_file))
+                except Exception as e:
+                    logger.warning("Failed to delete temp file", 
+                                 file_path=str(temp_file), error=str(e))
+        
+        logger.info(f"Manual cleanup completed: {files_cleaned} files removed")
+        return files_cleaned
 
 
 def get_minio_client(configuration: Dict = None) -> MinIOClient:

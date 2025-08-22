@@ -166,29 +166,8 @@ class RedisCache:
             # If not found, try pickle key (direct bytes format)
             pickled_data = self.connection.get(key + ":pickle")
             if pickled_data is not None:
-                # Check if it's the old hex format or new direct bytes format
-                if isinstance(pickled_data, str):
-                    # Old hex format - try to decode from hex
-                    try:
-                        # Could be old hex-encoded cache_data
-                        cache_info = pickle.loads(bytes.fromhex(pickled_data))
-                        if isinstance(cache_info, dict) and "type" in cache_info:
-                            # Old format with metadata
-                            value_type = cache_info["type"]
-                            serialized_value = cache_info["value"]
-                            if value_type == "pickle":
-                                return pickle.loads(bytes.fromhex(serialized_value))
-                            else:
-                                return serialized_value
-                        else:
-                            # Old format direct pickle
-                            return cache_info
-                    except (ValueError, TypeError):
-                        # Not valid hex, treat as direct pickle bytes
-                        return pickle.loads(pickled_data.encode())
-                else:
-                    # New direct bytes format
-                    return pickle.loads(pickled_data)
+                # Direct pickle bytes format
+                return pickle.loads(pickled_data)
             
             return None
                 
