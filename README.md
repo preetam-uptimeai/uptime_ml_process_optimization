@@ -1,222 +1,230 @@
-# Process Optimization Application
+# Process Optimization ML Service
 
-A professional process optimization application with MinIO integration, intelligent caching, and flexible deployment options.
+A high-performance process optimization service that uses machine learning models to continuously optimize industrial processes. Built with intelligent caching, MinIO integration, and flexible deployment modes.
 
-## Architecture Overview
+## 🚀 Quick Start
 
-This application follows a clean, modular architecture with proper separation of concerns:
+### Prerequisites
+- Python 3.8+
+- Redis (for caching)
+- MinIO (for model storage)
+- PostgreSQL (for data storage)
 
-- **Single Entry Point**: `app.py` - handles all startup modes
-- **Service-Based Architecture**: Separate services for optimization and API
-- **Intelligent Caching**: In-memory caching with version-aware invalidation
-- **Flexible Deployment**: Continuous optimization, API server, or hybrid mode
+### Installation & Setup
 
-## Features
-
-- **MinIO Integration**: Configuration and model files are loaded from MinIO object storage
-- **In-Memory Caching**: Smart caching system that avoids redundant downloads from MinIO
-- **Version-Aware Caching**: Automatic cache invalidation when config version changes
-- **Version Management**: Config files are versioned (e.g., config-1.0.0.yaml)
-- **Automatic Model Loading**: PyTorch models (.pth), scalers (.pkl), and metadata (.json) are loaded from MinIO
-- **Performance Optimization**: Models and configs are cached in memory and reused across optimization cycles
-- **Cache Management**: TTL-based expiration, statistics tracking, and cleanup utilities
-- **Timestamp Caching**: Last run timestamps are cached in memory for faster access
-- **Deployment Safety**: Cache automatically refreshes when new model versions are deployed
-- **Fallback Support**: Can still run with local files if needed
-
-## Quick Start
-
-1. **Start MinIO and setup**:
-   ```bash
-   ./scripts/setup_and_run.sh
-   ```
-
-2. **Upload your files** (if not done through the setup script):
-   ```bash
-   # Upload config file
-   python scripts/upload_to_minio.py upload-config --config config.yaml --version 1.0.0
-   
-   # Upload model files  
-   python scripts/upload_to_minio.py upload-models --data-dir ../process-optimization/data
-   ```
-
-3. **Run the application**:
-   
-   The application has a single entry point with multiple modes:
-   
-   ```bash
-   # Run both continuous optimization and API server (default)
-   python app.py
-   
-   # Run only continuous optimization
-   python app.py --mode continuous
-   
-   # Run only API server
-   python app.py --mode api --port 8080
-   
-   # Run with debug logging
-   python app.py --debug
-   
-   # Show all options
-   python app.py --help
-   ```
-
-## Cache Management
-
-## Project Structure
-
-```
-process_optimization/
-├── app.py                          # 🚀 Single entry point (all modes)
-├── requirements.txt                # 📦 Python dependencies
-├── config.yaml                     # ⚙️ Default configuration
-├── docker-compose.yml              # 🐳 Container setup
-│
-├── src/                           # 📁 Source code
-│   ├── core/
-│   │   └── logging_config.py       # 📝 Centralized logging
-│   ├── services/
-│   │   ├── optimization_service.py  # 🔄 Continuous optimization
-│   │   └── api_service.py          # 🌐 REST API service
-│   └── tests/
-│       ├── test_api.py             # 🧪 API endpoint tests
-│       └── test_timestamp_caching.py # 🧪 Cache tests
-│
-├── examples/
-│   └── api_client_example.py       # 📖 API usage examples
-│
-├── scripts/
-│   └── cache_manager_cli.py        # 🎛️ Cache management CLI
-│
-├── utils/                          # 🛠️ Shared utilities
-│   ├── cache_manager.py            # 💾 Memory caching
-│   ├── config_manager.py           # ⚙️ Config handling
-│   ├── minio_client.py             # ☁️ MinIO integration
-│   └── db/                         # 🗄️ Database utilities
-│
-├── rto/                           # 🧠 Optimization engine
-│   ├── strategy.py                 # 📋 Main strategy
-│   ├── data_context.py            # 📊 Data handling
-│   └── skills/                     # 🎯 Optimization skills
-│
-├── metadata/                      # 📄 Configuration files
-│   ├── deployed_config_version.yaml
-│   └── last_run_timestamp.yaml
-│
-└── logs/                          # 📜 Application logs
-    └── app_YYYYMMDD.log
-```
-
-## Testing & Tools
-
-### Application Testing
 ```bash
-# Test timestamp caching functionality
-python src/tests/test_timestamp_caching.py
+# 1. Install dependencies
+pip install -r requirements.txt
 
-# Test API endpoints
+# 2. Configure the service
+cp config.yaml.example config.yaml
+# Edit config.yaml with your database and storage settings
+
+# 3. Start the service
+python -m src
+```
+
+## 🏗️ Architecture
+
+This service follows a clean, modular architecture:
+
+- **🎯 Strategy-Based Optimization**: Configurable optimization strategies with multiple skill types
+- **🧠 ML Model Integration**: PyTorch models with intelligent caching from MinIO
+- **⚡ Redis Caching**: Fast in-memory caching for models, configs, and data
+- **🔄 Multiple Run Modes**: Continuous optimization, API server, or hybrid mode
+- **📊 Real-time Data**: PostgreSQL integration for live process data
+
+## 📋 Features
+
+### Core Capabilities
+- **Continuous Optimization**: Automated optimization cycles every 5 minutes
+- **REST API**: On-demand optimization via HTTP endpoints
+- **Strategy Management**: Version-controlled optimization strategies from MinIO
+- **Intelligent Caching**: Redis-based caching with TTL and version awareness
+- **Multi-Modal Deployment**: Run as continuous service, API server, or both
+
+### Optimization Skills
+- **🤖 ML Models**: PyTorch inference models for predictions
+- **🧮 Math Functions**: Custom mathematical calculations
+- **⚖️ Constraints**: Operational and safety constraints
+- **🎯 Optimization**: IPOPT-based nonlinear optimization
+- **🔧 Composition**: Chain multiple skills together
+
+## ⚙️ Configuration
+
+### Basic Configuration (`config.yaml`)
+```yaml
+app:
+  mode: hybrid  # continuous, api, or hybrid
+
+api:
+  host: 0.0.0.0
+  port: 5013
+
+optimization:
+  interval_seconds: 300
+  config_file: process-optimization-strategy-config.yaml
+
+storage:
+  minio:
+    endpoint: localhost:9002
+    bucket: process-optimization
+
+database:
+  host: localhost
+  port: 5432
+  dbname: process_db
+```
+
+### Strategy Configuration
+The optimization strategy is defined in a separate YAML file that includes:
+- **Variables**: Operative, informative, calculated, and predicted variables
+- **Skills**: ML models, constraints, and optimization components
+- **Tasks**: Execution sequence for optimization cycles
+
+## 🚀 Usage
+
+### Run Modes
+
+```bash
+# Continuous optimization only
+python -m src  # Uses config.yaml mode setting
+
+# API server only
+# Set mode: api in config.yaml
+
+# Both continuous and API (hybrid)
+# Set mode: hybrid in config.yaml
+```
+
+### API Endpoints
+
+Start the API server and use these endpoints:
+
+```bash
+# Health check
+curl http://localhost:5013/health
+
+# Run optimization
+curl -X POST http://localhost:5013/optimize \
+  -H "Content-Type: application/json" \
+  -d '{"input_data": {...}}'
+
+# Cache statistics
+curl http://localhost:5013/cache/stats
+
+# Clear cache
+curl -X POST http://localhost:5013/cache/clear
+```
+
+### Example API Usage
+
+```python
+import requests
+
+# Run optimization
+response = requests.post('http://localhost:5013/optimize', json={
+    'input_data': {
+        'Kiln_Feed_SFF_1_Feed_rate': 85.0,
+        'Kiln_Coal_PV': 8.5,
+        'Calciner_temperature_PV': 875.0
+    }
+})
+
+result = response.json()
+print(f"Optimization result: {result}")
+```
+
+## 📁 Project Structure
+
+```
+uptime_ml_process_optimization/
+├── src/
+│   ├── __main__.py              # Application entry point
+│   ├── service/
+│   │   ├── optimization.py     # Continuous optimization service
+│   │   └── api.py              # REST API service
+│   ├── strategy/
+│   │   ├── strategy.py         # Main optimization strategy
+│   │   ├── data_context.py     # Data management
+│   │   └── skills/             # Optimization skills
+│   ├── storage/
+│   │   ├── minio.py           # MinIO integration
+│   │   ├── redis.py           # Redis caching
+│   │   └── psql.py            # PostgreSQL connector
+│   └── strategy-manager/
+│       └── strategy_manager.py # Strategy version management
+├── config.yaml                 # Main configuration
+├── process-optimization-strategy-config.yaml  # Strategy config
+└── requirements.txt            # Dependencies
+```
+
+## 🔧 Development
+
+### Running Tests
+```bash
+# Run all tests
+python -m pytest src/tests/
+
+# Test specific components
 python src/tests/test_api.py
+python src/tests/test_timestamp_caching.py
 ```
 
-### Cache Management CLI
+### Cache Management
 ```bash
-# Show cache statistics
-python scripts/cache_manager_cli.py --stats
-
-# Test cache functionality
-python scripts/cache_manager_cli.py --test
-
-# Clean up expired files
-python scripts/cache_manager_cli.py --cleanup
+# View cache statistics
+python examples/cache_manager_cli.py --stats
 
 # Clear all caches
-python scripts/cache_manager_cli.py --clear
-
-# Run all operations
-python scripts/cache_manager_cli.py --all
+python examples/cache_manager_cli.py --clear
 ```
 
-## API Endpoints
+## 🐳 Docker Deployment
 
-The application provides a REST API for on-demand optimization:
-
-### Start API Server
 ```bash
-python app.py --mode api --host 0.0.0.0 --port 5000
+# Build and run with Docker Compose
+docker-compose up -d
+
+# Development mode
+docker-compose -f docker-compose.dev.yml up -d
 ```
 
-### Available Endpoints
+## 📊 Monitoring
 
-**POST /optimize** - Run single optimization cycle
+The service provides comprehensive logging and monitoring:
+
+- **Structured Logging**: JSON-formatted logs with contextual information
+- **Cache Statistics**: Real-time cache hit/miss ratios and performance metrics
+- **Optimization Metrics**: Cycle completion times and success rates
+- **Health Endpoints**: Service status and dependency health checks
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+1. **Cache Miss Issues**: Ensure Redis is running and accessible
+2. **Model Loading Errors**: Verify MinIO connection and bucket permissions
+3. **Database Timeouts**: Check PostgreSQL connection settings
+4. **Optimization Failures**: Review strategy configuration and variable constraints
+
+### Debugging
+
 ```bash
-curl -X POST http://localhost:5000/optimize \
-  -H "Content-Type: application/json" \
-  -d '{
-    "input_data": {
-      "Kiln_Feed_SFF_1_Feed_rate": 85.0,
-      "Kiln_Coal_PV": 8.5,
-      "Calciner_temperature_PV": 875.0,
-      ...
-    },
-    "config": {
-      "variables": {...},
-      "skills": {...},
-      "tasks": [...]
-    }
-  }'
+# Enable debug logging
+# Set log.level: DEBUG in config.yaml
+
+# Check service status
+curl http://localhost:5013/health
+
+# View cache statistics
+curl http://localhost:5013/cache/stats
 ```
 
-**GET /health** - Health check
-```bash
-curl http://localhost:5000/health
-```
+## 📝 License
 
-**GET /cache/stats** - Get cache statistics
-```bash
-curl http://localhost:5000/cache/stats
-```
+This project is proprietary software developed for industrial process optimization.
 
-**POST /cache/clear** - Clear all caches
-```bash
-curl -X POST http://localhost:5000/cache/clear
-```
+## 🤝 Contributing
 
-### API Testing
-```bash
-# Test all API endpoints
-python src/tests/test_api.py
-
-# Example API client usage
-python examples/api_client_example.py
-```
-
-## Detailed Setup
-
-See [scripts/README.md](scripts/README.md) for detailed setup instructions.
-
-## Configuration
-
-The application reads the deployed config version from `metadata/deployed_config_version.yaml` and downloads the corresponding config file from MinIO.
-
-## Architecture
-
-- **ConfigManager**: Reads config version and loads config from MinIO
-- **MinIOClient**: Handles all MinIO operations with intelligent caching
-- **CacheManager**: Singleton cache manager with TTL-based expiration
-- **InferenceModel**: Modified to load PyTorch models from MinIO with caching
-- **OptimizationStrategy**: Uses MinIO-based config loading by default
-- **API Server**: Flask-based REST API for on-demand optimization cycles
-
-## Performance Benefits
-
-The caching system provides significant performance improvements:
-
-- **🚀 Speed**: 3-10x faster model/config loading after first access
-- **💾 Memory Efficient**: Intelligent TTL-based cache expiration
-- **🔄 Consistency**: Same artifacts used across optimization cycles
-- **🔄 Version-Aware**: Automatic cache invalidation on config version changes
-- **🕒 Timestamp Caching**: Fast in-memory access to last run timestamps
-- **🌐 REST API**: On-demand optimization via HTTP endpoints
-- **🚀 Deployment Ready**: Safe cache updates when new models are deployed
-- **📊 Monitoring**: Built-in cache statistics and version tracking
-- **🧹 Cleanup**: Automatic cleanup of expired temporary files
+Please follow the established code style and include tests for new features. Contact the development team for contribution guidelines.
