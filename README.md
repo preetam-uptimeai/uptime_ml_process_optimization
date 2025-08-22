@@ -11,6 +11,11 @@ This application follows a clean, modular architecture with proper separation of
 - **Intelligent Caching**: In-memory caching with version-aware invalidation
 - **Flexible Deployment**: Continuous optimization, API server, or hybrid mode
 
+
+## Architecture Diagram
+
+<img width="2654" height="1232" alt="image" src="https://github.com/user-attachments/assets/b429af56-7192-4ccc-baaa-ccc87d3cb2ca" />
+
 ## Features
 
 - **MinIO Integration**: Configuration and model files are loaded from MinIO object storage
