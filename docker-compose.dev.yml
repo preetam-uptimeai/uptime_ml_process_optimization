@@ -1,15 +1,16 @@
 services:
-  # Redis Cache Service
+  # Redis Stack Service (includes RedisInsight UI)
   redis:
-    image: redis:7-alpine
-    container_name: process-optimization-redis-dev
+    image: "redis/redis-stack:7.2.0-v15"
+    container_name: "process-optimization-redis-stack-dev"
+    platform: "linux/amd64"
     ports:
-      - "6380:6379"  # Changed to avoid conflicts
-    command: redis-server --appendonly yes
+      - "6380:6379"  # Redis server
+      - "8002:8001"  # RedisInsight UI (changed to avoid conflicts)
     volumes:
       - redis_data:/data
     networks:
-      - process_optimization_dev_network
+      - process_optimization_network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -32,7 +33,7 @@ services:
     volumes:
       - minio_data:/data
     networks:
-      - process_optimization_dev_network
+      - process_optimization_network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
@@ -47,7 +48,7 @@ services:
     depends_on:
       - minio
     networks:
-      - process_optimization_dev_network
+      - process_optimization_network
     entrypoint: >
       /bin/sh -c "
       sleep 10;
@@ -66,5 +67,5 @@ volumes:
     driver: local
 
 networks:
-  process_optimization_dev_network:
+  process_optimization_network:
     driver: bridge

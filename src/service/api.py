@@ -8,6 +8,8 @@ import tempfile
 import yaml
 import os
 import sys
+import logging
+from typing import Dict
 import traceback
 from datetime import datetime
 from typing import Dict, Any, Optional
@@ -27,7 +29,7 @@ get_strategy_cache = strategy_manager_module.get_strategy_cache
 class APIService:
     """Service for handling REST API requests."""
     
-    def __init__(self, host: str = "0.0.0.0", port: int = 5000, debug: bool = False):
+    def __init__(self, host: str = "0.0.0.0", port: int = 5000, debug: bool = False, configuration: Dict = None):
         """
         Initialize the API service.
         
@@ -35,10 +37,12 @@ class APIService:
             host: Host to bind to
             port: Port to bind to
             debug: Enable debug mode
+            configuration: Configuration dictionary from config.yaml
         """
         self.host = host
         self.port = port
         self.debug = debug
+        self.configuration = configuration or {}
         self.logger = structlog.get_logger("process_optimization.api")
         
         # Create Flask app
@@ -124,8 +128,8 @@ class APIService:
                 temp_config_path = temp_config.name
             
             try:
-                # Create strategy with the provided config
-                strategy = OptimizationStrategy(config_path=temp_config_path, use_minio=False)
+                # Create strategy with the provided config and configuration
+                strategy = OptimizationStrategy(config_path=temp_config_path, use_minio=False, configuration=self.configuration)
                 self.logger.info(f"Strategy loaded with {len(strategy.get_operative_variable_ids())} operative variables")
                 
                 # Validate input data contains required variables
@@ -438,7 +442,16 @@ class APIService:
         self.logger.info("   POST /cache/clear     - Clear all caches")
         
         try:
-            self.app.run(host=self.host, port=self.port, debug=self.debug, use_reloader=False)
+            # Use threaded=True for better shutdown handling
+            self.app.run(
+                host=self.host, 
+                port=self.port, 
+                debug=self.debug, 
+                use_reloader=False,
+                threaded=True
+            )
+        except KeyboardInterrupt:
+            self.logger.info("API service interrupted by user")
         except Exception as e:
             self.logger.error(f"Failed to start API service: {e}")
             raise

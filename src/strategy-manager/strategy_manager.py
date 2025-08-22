@@ -66,7 +66,15 @@ class StrategyManager:
             version = self.get_deployed_config_version()
             self.logger.info(f"Loading config version {version} from MinIO...")
             
-            # Load config from MinIO
+            # Check if version changed and invalidate cache if needed
+            cache_invalidated = self.strategy_cache.check_version_and_invalidate_if_needed(version)
+            if cache_invalidated:
+                self.logger.info("Cache was invalidated due to version change")
+                # Also cleanup old temporary files when version changes
+                self.logger.info("Cleaning up old temporary files due to version change")
+                self.minio_client.cleanup_on_version_change()
+            
+            # Load config from MinIO (will use cache if available)
             config = self.minio_client.get_config_by_version(version)
             self.logger.info("Successfully loaded config from MinIO")
             return config

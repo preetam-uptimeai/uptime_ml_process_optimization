@@ -6,14 +6,14 @@ app:
   mode: hybrid  # continuous, api, hybrid
 api:
   host: 0.0.0.0
-  port: 5001  # Changed to avoid conflicts with AirPlay
+  port: 5013  # Changed to avoid conflicts
   debug: true
 redis:
   host: localhost
   port: 6380  # Development port
 database:
   host: 65.1.237.188
-  port: 5433  # Development port
+  port: 5432  # Development port
   dbname: process_db
   user: postgres
   password: Uptime@975
