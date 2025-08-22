@@ -1,18 +1,27 @@
 import yaml
-import logging
+import structlog
 from datetime import datetime
-from typing import Optional
-from .minio_client import get_minio_client
-from .cache_manager import get_cache_manager
+from typing import Optional, Dict
+from storage.minio import get_minio_client
+from .strategy_cache import get_strategy_cache
 
-class ConfigManager:
-    def __init__(self, timestamp_file: str = 'metadata/last_run_timestamp.yaml', 
-                 deployed_config_file: str = 'metadata/deployed_config_version.yaml'):
+class StrategyManager:
+    def __init__(self, configuration: Dict = None, 
+                 timestamp_file: str = 'src/strategy-manager/last_run_timestamp.yaml', 
+                 deployed_config_file: str = 'src/strategy-manager/strategy_version.yaml'):
+        """Initialize StrategyManager with configuration from config.yaml.
+        
+        Args:
+            configuration: Configuration dictionary from config.yaml
+            timestamp_file: Path to timestamp file
+            deployed_config_file: Path to strategy version file
+        """
+        self.configuration = configuration or {}
         self.timestamp_file = timestamp_file
         self.deployed_config_file = deployed_config_file
-        self.minio_client = get_minio_client()
-        self.cache_manager = get_cache_manager()
-        self.logger = logging.getLogger("process_optimization.config_manager")
+        self.minio_client = get_minio_client(configuration)
+        self.strategy_cache = get_strategy_cache()
+        self.logger = structlog.get_logger("process_optimization.strategy_manager")
 
     def get_last_run_timestamp(self) -> Optional[datetime]:
         """Get the last run timestamp from cache or file"""
@@ -26,7 +35,7 @@ class ConfigManager:
                 print(f"Warning: Could not read last_run_timestamp from file: {e}")
             return None
         
-        return self.cache_manager.get_last_run_timestamp_with_cache(_load_timestamp_from_file)
+        return self.strategy_cache.get_last_run_timestamp_with_cache(_load_timestamp_from_file)
 
     def update_last_run_timestamp(self, timestamp: datetime):
         """Write the last run timestamp to config file and update cache"""
@@ -36,17 +45,17 @@ class ConfigManager:
             yaml.dump(config, f)
         
         # Update cache
-        self.cache_manager.set_cached_last_run_timestamp(timestamp)
+        self.strategy_cache.set_cached_last_run_timestamp(timestamp)
 
     def get_deployed_config_version(self) -> str:
-        """Read the deployed config version from metadata file"""
+        """Read the deployed strategy version from strategy file"""
         try:
             with open(self.deployed_config_file, 'r') as f:
                 config = yaml.safe_load(f)
-                if config and 'config.yaml' in config:
-                    return config['config.yaml']
+                if config and 'process-optimization-strategy-config.yaml' in config:
+                    return config['process-optimization-strategy-config.yaml']
                 else:
-                    raise Exception("config.yaml version not found in deployed_config_version.yaml")
+                    raise Exception("process-optimization-strategy-config.yaml version not found in strategy_version.yaml")
         except Exception as e:
             raise Exception(f"Failed to read deployed config version: {str(e)}")
 
@@ -64,9 +73,13 @@ class ConfigManager:
         except Exception as e:
             raise Exception(f"Failed to load strategy config from MinIO: {str(e)}")
 
-    def load_strategy_config(self, config_file: str = 'config.yaml') -> dict:
+    def load_strategy_config(self, config_file: str = None) -> dict:
         """Load strategy configuration from file (fallback method)"""
         try:
+            # Use config file from main configuration if not specified
+            if config_file is None:
+                config_file = self.configuration.get('optimization', {}).get('config_file', 'process-optimization-config.yaml')
+            
             with open(config_file, 'r') as f:
                 return yaml.safe_load(f)
         except Exception as e:

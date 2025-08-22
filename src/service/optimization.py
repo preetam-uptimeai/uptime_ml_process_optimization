@@ -4,32 +4,41 @@ Optimization Service - Handles continuous optimization cycles.
 
 import time
 import threading
-import logging
+import structlog
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict
 
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from rto.strategy import OptimizationStrategy
-from utils import ConfigManager, DatabaseManager, post_process_optimization_result, get_cache_manager
+from strategy.strategy import OptimizationStrategy
+from storage import DatabaseManager
+# Import via alias to handle hyphenated directory name
+import importlib
+strategy_manager_module = importlib.import_module('strategy-manager.strategy_manager')
+strategy_cache_module = importlib.import_module('strategy-manager.strategy_cache')
+StrategyManager = strategy_manager_module.StrategyManager
+get_strategy_cache = strategy_cache_module.get_strategy_cache
+from strategy import post_process_optimization_result
 
 
 class OptimizationService:
     """Service for running continuous optimization cycles."""
     
-    def __init__(self, shutdown_event: threading.Event):
+    def __init__(self, shutdown_event: threading.Event, configuration: Dict = None):
         """
         Initialize the optimization service.
         
         Args:
             shutdown_event: Event to signal shutdown
+            configuration: Configuration dictionary from config.yaml
         """
         self.shutdown_event = shutdown_event
-        self.logger = logging.getLogger("process_optimization.optimization_service")
-        self.config_manager = ConfigManager()
-        self.cache_manager = get_cache_manager()
+        self.configuration = configuration or {}
+        self.logger = structlog.get_logger("process_optimization.optimization")
+        self.strategy_manager = StrategyManager(self.configuration)
+        self.strategy_cache = get_strategy_cache()
         self.cycle_count = 0
         
     def run_single_cycle(self) -> bool:
@@ -55,12 +64,12 @@ class OptimizationService:
             required_vars = operative_vars + informative_vars
 
             # Get last run timestamp
-            last_timestamp = self.config_manager.get_last_run_timestamp()
+            last_timestamp = self.strategy_manager.get_last_run_timestamp()
             if last_timestamp:
                 self.logger.debug(f"Last run timestamp from config: {last_timestamp}")
 
             # Get latest data from database
-            db = DatabaseManager()
+            db = DatabaseManager(self.configuration)
             result = db.get_latest_data(required_vars, last_timestamp)
             last_timestamp = result['timestamp']
             self.logger.info(f"Running optimization cycle for timestamp: {last_timestamp}")
@@ -85,7 +94,7 @@ class OptimizationService:
             post_process_optimization_result(final_context, strategy)
 
             # Update last run timestamp in config
-            self.config_manager.update_last_run_timestamp(last_timestamp)
+            self.strategy_manager.update_last_run_timestamp(last_timestamp)
             
             self.logger.info(f"Cycle #{self.cycle_count} completed successfully")
             return True
@@ -128,7 +137,7 @@ class OptimizationService:
         """Show cache statistics."""
         try:
             self.logger.info(f"Cache Statistics (Cycle #{self.cycle_count}):")
-            stats = self.cache_manager.get_cache_stats()
+            stats = self.strategy_cache.get_cache_stats()
             
             # Show current config version
             current_version = stats.get('current_config_version')
@@ -153,7 +162,7 @@ class OptimizationService:
             
             # Clean up expired temp files periodically
             self.logger.info("Cleaning up expired temporary files...")
-            self.cache_manager.cleanup_expired_temp_files()
+            # Cleanup is now handled by Redis TTL automatically
             
         except Exception as e:
             self.logger.error(f"Error showing cache statistics: {e}")
@@ -163,7 +172,7 @@ class OptimizationService:
         try:
             self.logger.info(f"Optimization stopped after {self.cycle_count} cycles")
             self.logger.info("Final cache statistics:")
-            stats = self.cache_manager.get_cache_stats()
+            stats = self.strategy_cache.get_cache_stats()
             
             current_version = stats.get('current_config_version')
             if current_version:

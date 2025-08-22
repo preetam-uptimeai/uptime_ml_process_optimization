@@ -2,7 +2,7 @@
 API Service - Handles REST API endpoints for on-demand optimization.
 """
 
-import logging
+import structlog
 import threading
 import tempfile
 import yaml
@@ -17,8 +17,11 @@ from flask_cors import CORS
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from rto.strategy import OptimizationStrategy
-from utils import get_cache_manager
+from strategy.strategy import OptimizationStrategy
+# Import via alias to handle hyphenated directory name
+import importlib
+strategy_manager_module = importlib.import_module('strategy-manager.strategy_cache')
+get_strategy_cache = strategy_manager_module.get_strategy_cache
 
 
 class APIService:
@@ -36,7 +39,7 @@ class APIService:
         self.host = host
         self.port = port
         self.debug = debug
-        self.logger = logging.getLogger("process_optimization.api_service")
+        self.logger = structlog.get_logger("process_optimization.api")
         
         # Create Flask app
         self.app = Flask(__name__)
@@ -292,8 +295,8 @@ class APIService:
     
     def _health_check(self):
         """Health check endpoint."""
-        cache_manager = get_cache_manager()
-        cache_stats = cache_manager.get_cache_stats()
+        strategy_cache = get_strategy_cache()
+        cache_stats = strategy_cache.get_cache_stats()
         
         return jsonify({
             'status': 'healthy',
@@ -358,8 +361,8 @@ class APIService:
     def _get_cache_stats(self):
         """Get current cache statistics."""
         try:
-            cache_manager = get_cache_manager()
-            stats = cache_manager.get_cache_stats()
+            strategy_cache = get_strategy_cache()
+            stats = strategy_cache.get_cache_stats()
             
             # Format stats for API response
             formatted_stats = {
@@ -392,8 +395,8 @@ class APIService:
     def _clear_cache(self):
         """Clear all caches."""
         try:
-            cache_manager = get_cache_manager()
-            cache_manager.clear_all_caches()
+            strategy_cache = get_strategy_cache()
+            strategy_cache.clear_all_caches()
             
             return jsonify({
                 'status': 'success',

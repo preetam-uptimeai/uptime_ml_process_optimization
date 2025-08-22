@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional
 import yaml
 from minio import Minio
 from minio.error import S3Error
-from .cache_manager import get_cache_manager
+# Note: Import moved to avoid circular dependency
 
 
 class MinIOClient:
@@ -39,7 +39,22 @@ class MinIOClient:
         )
         self.config_bucket = "process-optimization"
         self.models_bucket = "process-optimization"
-        self.cache_manager = get_cache_manager()
+        # Lazy import to avoid circular dependency
+        self._strategy_cache = None
+    
+    def _get_strategy_cache(self):
+        """Lazy load strategy cache to avoid circular imports."""
+        if self._strategy_cache is None:
+            try:
+                # Import here to avoid circular dependency
+                import importlib
+                strategy_cache_module = importlib.import_module('strategy-manager.strategy_cache')
+                get_strategy_cache = strategy_cache_module.get_strategy_cache
+                self._strategy_cache = get_strategy_cache()
+            except ImportError as e:
+                # If import fails, disable caching
+                return None
+        return self._strategy_cache
     
     def get_config_by_version(self, version: str) -> Dict[str, Any]:
         """
@@ -77,7 +92,18 @@ class MinIOClient:
             except Exception as e:
                 raise Exception(f"Error reading config from MinIO: {e}")
         
-        return self.cache_manager.get_config_by_version(version, _load_config_from_minio)
+        # Check cache first  
+        strategy_cache = self._get_strategy_cache()
+        if strategy_cache:
+            cached_config = strategy_cache.get_cached_config(version)
+            if cached_config is not None:
+                return cached_config
+        
+        # Load from MinIO and cache
+        config = _load_config_from_minio(version)
+        if strategy_cache:
+            strategy_cache.set_cached_config(version, config)
+        return config
     
     def get_pytorch_model(self, model_path: str) -> str:
         """
@@ -111,7 +137,18 @@ class MinIOClient:
             except Exception as e:
                 raise Exception(f"Error downloading model from MinIO: {e}")
         
-        return self.cache_manager.get_temp_model_path(model_path, _download_model_from_minio)
+        # Check cache first
+        strategy_cache = self._get_strategy_cache()
+        if strategy_cache:
+            cached_model = strategy_cache.get_cached_model(model_path)
+            if cached_model is not None:
+                return cached_model
+        
+        # Download from MinIO and cache
+        model = _download_model_from_minio(model_path)
+        if strategy_cache:
+            strategy_cache.set_cached_model(model_path, model)
+        return model
     
     def get_pickle_scaler(self, scaler_path: str) -> Any:
         """
@@ -147,7 +184,18 @@ class MinIOClient:
             except Exception as e:
                 raise Exception(f"Error reading scaler from MinIO: {e}")
         
-        return self.cache_manager.get_pickle_scaler(scaler_path, _load_scaler_from_minio)
+        # Check cache first
+        strategy_cache = self._get_strategy_cache()
+        if strategy_cache:
+            cached_scaler = strategy_cache.get_cached_scaler(scaler_path)
+            if cached_scaler is not None:
+                return cached_scaler
+        
+        # Load from MinIO and cache
+        scaler = _load_scaler_from_minio(scaler_path)
+        if strategy_cache:
+            strategy_cache.set_cached_scaler(scaler_path, scaler)
+        return scaler
     
     def get_json_metadata(self, metadata_path: str) -> Dict[str, Any]:
         """
@@ -183,7 +231,9 @@ class MinIOClient:
             except Exception as e:
                 raise Exception(f"Error reading metadata from MinIO: {e}")
         
-        return self.cache_manager.get_json_metadata(metadata_path, _load_metadata_from_minio)
+        # Note: Metadata caching not implemented in new strategy cache
+        # Load directly from MinIO for now
+        return _load_metadata_from_minio(metadata_path)
     
     def upload_file(self, bucket_name: str, object_name: str, file_path: str) -> bool:
         """
@@ -243,22 +293,40 @@ class MinIOClient:
         Returns:
             Dictionary with cache statistics
         """
-        return self.cache_manager.get_cache_stats()
+        strategy_cache = self._get_strategy_cache()
+        if strategy_cache:
+            return strategy_cache.get_cache_stats()
+        return {}
     
     def clear_all_caches(self) -> None:
         """Clear all MinIO caches."""
-        self.cache_manager.clear_all_caches()
+        strategy_cache = self._get_strategy_cache()
+        if strategy_cache:
+            strategy_cache.clear_all_caches()
     
     def cleanup_expired_temp_files(self) -> None:
         """Clean up expired temporary files from disk."""
-        self.cache_manager.cleanup_expired_temp_files()
+        # Redis TTL handles cleanup automatically
 
 
-def get_minio_client() -> MinIOClient:
+def get_minio_client(configuration: Dict = None) -> MinIOClient:
     """
-    Factory function to create MinIO client with default settings.
+    Factory function to create MinIO client with configuration settings.
+    
+    Args:
+        configuration: Configuration dictionary containing storage.minio settings
     
     Returns:
         Configured MinIOClient instance
     """
-    return MinIOClient()
+    if configuration and 'storage' in configuration and 'minio' in configuration['storage']:
+        minio_config = configuration['storage']['minio']
+        return MinIOClient(
+            endpoint=minio_config.get('endpoint', 'localhost:9002'),
+            access_key=minio_config.get('access_key', 'user'),
+            secret_key=minio_config.get('secret_key', 'password'),
+            secure=minio_config.get('secure', False)
+        )
+    
+    # Fallback to default settings
+    return MinIOClient(endpoint="localhost:9002", access_key="user", secret_key="password")

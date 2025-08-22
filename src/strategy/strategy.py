@@ -9,7 +9,10 @@ from .skills.optimizer import OptimizationSkill
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from utils.config_manager import ConfigManager
+# Import via alias to handle hyphenated directory name
+import importlib
+strategy_manager_module = importlib.import_module('strategy-manager.strategy_manager')
+StrategyManager = strategy_manager_module.StrategyManager
 
 class OptimizationStrategy:
     """
@@ -25,9 +28,9 @@ class OptimizationStrategy:
 
     def __init__(self, config_path=None, use_minio=True):
         if use_minio:
-            # Load config from MinIO using ConfigManager
-            config_manager = ConfigManager()
-            self.config = config_manager.load_strategy_config_from_minio()
+            # Load config from MinIO using StrategyManager
+            strategy_manager = StrategyManager()
+            self.config = strategy_manager.load_strategy_config_from_minio()
         else:
             # Fallback to local file loading
             if not config_path:

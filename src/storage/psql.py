@@ -1,11 +1,21 @@
 import psycopg2
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
-from .config import DB_CONFIG
 
 class DatabaseManager:
-    def __init__(self):
-        self.db_config = DB_CONFIG
+    def __init__(self, configuration: Dict = None):
+        """Initialize DatabaseManager with configuration from config.yaml.
+        
+        Args:
+            configuration: Configuration dictionary containing database settings
+        """
+        if configuration is None:
+            raise ValueError("Configuration must be provided")
+        
+        self.db_config = configuration.get('database', {})
+        if not self.db_config:
+            raise ValueError("Database configuration not found in config")
+            
         self.conn = None
         self.cursor = None
 
