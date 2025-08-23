@@ -1,4 +1,74 @@
-# Process Optimization ML Service
+# Process Optimization Application
+
+A professional process optimization application with MinIO integration, intelligent caching, and flexible deployment options.
+
+## Architecture Overview
+
+This application follows a clean, modular architecture with proper separation of concerns:
+
+- **Single Entry Point**: `app.py` - handles all startup modes
+- **Service-Based Architecture**: Separate services for optimization and API
+- **Intelligent Caching**: In-memory caching with version-aware invalidation
+- **Flexible Deployment**: Continuous optimization, API server, or hybrid mode
+
+
+## Architecture Diagram
+
+<img width="2654" height="1232" alt="image" src="https://github.com/user-attachments/assets/b429af56-7192-4ccc-baaa-ccc87d3cb2ca" />
+
+## Features
+
+- **MinIO Integration**: Configuration and model files are loaded from MinIO object storage
+- **In-Memory Caching**: Smart caching system that avoids redundant downloads from MinIO
+- **Version-Aware Caching**: Automatic cache invalidation when config version changes
+- **Version Management**: Config files are versioned (e.g., config-1.0.0.yaml)
+- **Automatic Model Loading**: PyTorch models (.pth), scalers (.pkl), and metadata (.json) are loaded from MinIO
+- **Performance Optimization**: Models and configs are cached in memory and reused across optimization cycles
+- **Cache Management**: TTL-based expiration, statistics tracking, and cleanup utilities
+- **Timestamp Caching**: Last run timestamps are cached in memory for faster access
+- **Deployment Safety**: Cache automatically refreshes when new model versions are deployed
+- **Fallback Support**: Can still run with local files if needed
+
+## Quick Start
+
+1. **Start MinIO and setup**:
+   ```bash
+   ./scripts/setup_and_run.sh
+   ```
+
+2. **Upload your files** (if not done through the setup script):
+   ```bash
+   # Upload config file
+   python scripts/upload_to_minio.py upload-config --config config.yaml --version 1.0.0
+   
+   # Upload model files  
+   python scripts/upload_to_minio.py upload-models --data-dir ../process-optimization/data
+   ```
+
+3. **Run the application**:
+   
+   The application has a single entry point with multiple modes:
+   
+   ```bash
+   # Run both continuous optimization and API server (default)
+   python app.py
+   
+   # Run only continuous optimization
+   python app.py --mode continuous
+   
+   # Run only API server
+   python app.py --mode api --port 8080
+   
+   # Run with debug logging
+   python app.py --debug
+   
+   # Show all options
+   python app.py --help
+   ```
+
+## Cache Management
+
+## Project Structure
 
 A high-performance process optimization service that uses machine learning models to continuously optimize industrial processes. Built with intelligent caching, MinIO integration, and flexible deployment modes.
 
@@ -226,5 +296,3 @@ curl http://localhost:5013/cache/stats
 This project is proprietary software developed for industrial process optimization.
 
 ## 🤝 Contributing
-
-Please follow the established code style and include tests for new features. Contact the development team for contribution guidelines.
