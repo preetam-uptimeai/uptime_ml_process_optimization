@@ -187,8 +187,13 @@ class OptimizationService:
             
             for cache_type, cache_stats in stats.items():
                 if cache_type not in ['current_config_version', 'cached_last_run_timestamp']:
-                    active = cache_stats.get('active_items', 0)
-                    self.logger.info(f"  {cache_type}: {active} items")
+                    # Check if cache_stats is a dictionary before calling .get()
+                    if isinstance(cache_stats, dict):
+                        active = cache_stats.get('active_items', 0)
+                        self.logger.info(f"  {cache_type}: {active} items")
+                    else:
+                        # Handle non-dict values (like cache_efficiency which is a float)
+                        self.logger.info(f"  {cache_type}: {cache_stats}")
                     
         except Exception as e:
             self.logger.error(f"Error showing final statistics: {e}")
