@@ -16,83 +16,28 @@ This application follows a clean, modular architecture with proper separation of
 
 <img width="2654" height="1232" alt="image" src="https://github.com/user-attachments/assets/b429af56-7192-4ccc-baaa-ccc87d3cb2ca" />
 
-## Features
-
-- **MinIO Integration**: Configuration and model files are loaded from MinIO object storage
-- **In-Memory Caching**: Smart caching system that avoids redundant downloads from MinIO
-- **Version-Aware Caching**: Automatic cache invalidation when config version changes
-- **Version Management**: Config files are versioned (e.g., config-1.0.0.yaml)
-- **Automatic Model Loading**: PyTorch models (.pth), scalers (.pkl), and metadata (.json) are loaded from MinIO
-- **Performance Optimization**: Models and configs are cached in memory and reused across optimization cycles
-- **Cache Management**: TTL-based expiration, statistics tracking, and cleanup utilities
-- **Timestamp Caching**: Last run timestamps are cached in memory for faster access
-- **Deployment Safety**: Cache automatically refreshes when new model versions are deployed
-- **Fallback Support**: Can still run with local files if needed
 
 ## Quick Start
-
-1. **Start MinIO and setup**:
-   ```bash
-   ./scripts/setup_and_run.sh
-   ```
-
-2. **Upload your files** (if not done through the setup script):
-   ```bash
-   # Upload config file
-   python scripts/upload_to_minio.py upload-config --config config.yaml --version 1.0.0
-   
-   # Upload model files  
-   python scripts/upload_to_minio.py upload-models --data-dir ../process-optimization/data
-   ```
-
-3. **Run the application**:
+**Run the application**:
    
    The application has a single entry point with multiple modes:
    
    ```bash
-   # Run both continuous optimization and API server (default)
-   python app.py
-   
-   # Run only continuous optimization
-   python app.py --mode continuous
-   
-   # Run only API server
-   python app.py --mode api --port 8080
-   
-   # Run with debug logging
-   python app.py --debug
-   
-   # Show all options
-   python app.py --help
+    - `cd uptime_ml_process_optimization`
+
+    ### Setup
+
+    - `conda create -n uptime_ml_process_optimization python=3.12.0`
+
+    - `conda activate uptime_ml_process_optimization`
+
+    ### Run
+
+    - [Only if dependencies are updated] `pip install -r requirements.txt`
+
+    - `python src`
    ```
 
-## Cache Management
-
-## Project Structure
-
-A high-performance process optimization service that uses machine learning models to continuously optimize industrial processes. Built with intelligent in-memory caching, MinIO integration, and flexible deployment modes.
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Python 3.8+
-
-- MinIO (for model storage)
-- PostgreSQL (for data storage)
-
-### Installation & Setup
-
-```bash
-# 1. Install dependencies
-pip install -r requirements.txt
-
-# 2. Configure the service
-cp config.yaml.example config.yaml
-# Edit config.yaml with your database and storage settings
-
-# 3. Start the service
-python -m src
-```
 
 ## 🏗️ Architecture
 
@@ -120,52 +65,12 @@ This service follows a clean, modular architecture:
 - **🎯 Optimization**: IPOPT-based nonlinear optimization
 - **🔧 Composition**: Chain multiple skills together
 
-## ⚙️ Configuration
-
-### Basic Configuration (`config.yaml`)
-```yaml
-app:
-  mode: hybrid  # continuous, api, or hybrid
-
-api:
-  host: 0.0.0.0
-  port: 8005
-
-optimization:
-  interval_seconds: 300
-  config_file: process-optimization-strategy-config.yaml
-
-storage:
-  minio:
-    endpoint: localhost:9002
-    bucket: process-optimization
-
-database:
-  host: localhost
-  port: 5432
-  dbname: process_db
-```
-
 ### Strategy Configuration
 The optimization strategy is defined in a separate YAML file that includes:
 - **Variables**: Operative, informative, calculated, and predicted variables
 - **Skills**: ML models, constraints, and optimization components
 - **Tasks**: Execution sequence for optimization cycles
 
-## 🚀 Usage
-
-### Run Modes
-
-```bash
-# Continuous optimization only
-python -m src  # Uses config.yaml mode setting
-
-# API server only
-# Set mode: api in config.yaml
-
-# Both continuous and API (hybrid)
-# Set mode: hybrid in config.yaml
-```
 
 ### API Endpoints
 
@@ -251,28 +156,6 @@ uptime_ml_process_optimization/
 └── requirements.txt            # Dependencies
 ```
 
-## 🔧 Development
-
-### Running Tests
-```bash
-# Run all tests
-python -m pytest src/tests/
-
-# Test specific components
-python src/tests/test_api.py
-python src/tests/test_timestamp_caching.py
-```
-
-### Cache Management
-```bash
-# View cache statistics
-python examples/cache_manager_cli.py --stats
-
-# Clear all caches
-python examples/cache_manager_cli.py --clear
-```
-
-## 🐳 Docker Deployment
 
 ```bash
 # Build and run with Docker Compose
@@ -282,58 +165,6 @@ docker-compose up -d
 docker-compose -f docker-compose.dev.yml up -d
 ```
 
-## 🚀 Performance Features
-
-### Advanced In-Memory Caching
-- **Model Caching**: PyTorch models loaded directly into memory (no temporary files)
-- **Scaler Caching**: ML scalers cached in memory for fast access
-- **Version-Aware Invalidation**: Automatic cache clearing when strategy versions change
-- **Cache Statistics**: Real-time monitoring of cache hit/miss ratios and memory usage
-
-### Caching Benefits
-- **⚡ Fast Model Loading**: Models cached in memory eliminate file I/O overhead
-- **🔄 Version Safety**: Cache automatically invalidates when `strategy_version.yaml` changes
-- **📊 Memory Efficient**: No temporary files, all caching done in memory
-- **🎯 Smart Invalidation**: Only clears cache when necessary, preserving performance
-
-## 📊 Monitoring
-
-The service provides comprehensive logging and monitoring:
-
-- **Structured Logging**: JSON-formatted logs with contextual information
-- **Cache Statistics**: Real-time cache hit/miss ratios and performance metrics
-- **Optimization Metrics**: Cycle completion times and success rates
-- **Health Endpoints**: Service status and dependency health checks
-- **Cache Visibility**: Detailed logging of cached model and scaler locations
-
-## 🔧 Troubleshooting
-
-### Common Issues
-
-1. **Cache Miss Issues**: Check memory usage and restart if needed. Models and scalers are now cached in memory.
-2. **Model Loading Errors**: Verify MinIO connection and bucket permissions. Check logs for "Model cached in memory" messages.
-3. **Version Mismatch**: If models seem outdated, check `strategy_version.yaml` - cache auto-invalidates on version changes.
-4. **Database Timeouts**: Check PostgreSQL connection settings
-5. **Optimization Failures**: Review strategy configuration and variable constraints
-
-### Debugging
-
-```bash
-# Enable debug logging
-# Set log.level: DEBUG in config.yaml
-
-# Check service status
-curl http://localhost:8005/health
-
-# View detailed cache statistics (shows models, scalers, configs)
-curl http://localhost:8005/cache/stats
-
-# Clear all caches (forces fresh loading from MinIO)
-curl -X POST http://localhost:8005/cache/clear
-
-# Check logs for cache activity
-tail -f logs/app.log | grep -E "(cached|cache|version)"
-```
 
 ### Cache Debugging
 Look for these log messages to understand cache behavior:
@@ -341,9 +172,3 @@ Look for these log messages to understand cache behavior:
 - `"Using cached model object for: <path>"` - Model loaded from cache
 - `"Version changed from X to Y, invalidating cache"` - Cache cleared due to version change
 - `"Cache invalidated due to version change. Cleared N items"` - Shows what was cleared
-
-## 📝 License
-
-This project is proprietary software developed for industrial process optimization.
-
-## 🤝 Contributing
