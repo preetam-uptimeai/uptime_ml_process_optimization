@@ -2,16 +2,6 @@
 
 A professional process optimization application with MinIO integration, intelligent caching, and flexible deployment options.
 
-## Architecture Overview
-
-This application follows a clean, modular architecture with proper separation of concerns:
-
-- **Single Entry Point**: `app.py` - handles all startup modes
-- **Service-Based Architecture**: Separate services for optimization and API
-- **Intelligent Caching**: In-memory caching with version-aware invalidation
-- **Flexible Deployment**: Continuous optimization, API server, or hybrid mode
-
-
 ## Architecture Diagram
 
 <img width="2654" height="1232" alt="image" src="https://github.com/user-attachments/assets/b429af56-7192-4ccc-baaa-ccc87d3cb2ca" />
