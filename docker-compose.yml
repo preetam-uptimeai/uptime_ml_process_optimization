@@ -1,21 +1,5 @@
 services:
-  # Redis Cache Service
-  redis:
-    image: redis:7-alpine
-    container_name: process-optimization-redis
-    ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes
-    volumes:
-      - redis_data:/data
-    networks:
-      - process_optimization_network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    restart: unless-stopped
+
 
   # # PostgreSQL Database Service (optional - if you want to include it)
   # postgres:
@@ -94,8 +78,7 @@ services:
   #     - ./process-optimization-strategy-config.yaml:/app/process-optimization-strategy-config.yaml:ro
   #     - logs_data:/app/logs
   #   depends_on:
-  #     redis:
-  #       condition: service_healthy
+
   #     postgres:
   #       condition: service_healthy
   #     minio:
@@ -111,8 +94,6 @@ services:
   #   restart: unless-stopped
 
 volumes:
-  redis_data:
-    driver: local
   postgres_data:
     driver: local
   minio_data:

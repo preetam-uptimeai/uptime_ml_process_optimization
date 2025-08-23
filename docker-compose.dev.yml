@@ -1,22 +1,4 @@
 services:
-  # Redis Stack Service (includes RedisInsight UI)
-  redis:
-    image: "redis/redis-stack:7.2.0-v15"
-    container_name: "process-optimization-redis-stack-dev"
-    platform: "linux/amd64"
-    ports:
-      - "6380:6379"  # Redis server
-      - "8002:8001"  # RedisInsight UI (changed to avoid conflicts)
-    volumes:
-      - redis_data:/data
-    networks:
-      - process_optimization_network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    restart: unless-stopped
 
   # MinIO Object Storage Service
   minio:
@@ -61,8 +43,6 @@ services:
     restart: "no"
 
 volumes:
-  redis_data:
-    driver: local
   minio_data:
     driver: local
 

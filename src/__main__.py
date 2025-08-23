@@ -15,7 +15,7 @@ from typing import Optional
 from service.optimization import OptimizationService
 from service.api import APIService
 from core.logging_config import configure_structlog
-from storage import init_redis_cache
+
 
 
 class ProcessOptimizationApp:
@@ -172,13 +172,7 @@ if __name__ == "__main__":
     log.debug("configuration loaded")
     log.debug("logger configured for global consumption")
     
-    # Initialize Redis cache
-    try:
-        init_redis_cache(configuration)
-        log.debug("Redis cache initialized")
-    except Exception as e:
-        log.error(f"Failed to initialize Redis cache: {e}")
-        sys.exit(102)
+
     
     log.info(f"<<{configuration['meta']['id']}>> starting process optimization worker ...")
 

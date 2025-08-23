@@ -6,7 +6,7 @@ import io
 import json
 import os
 import pickle
-import tempfile
+
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -15,39 +15,12 @@ import structlog
 import yaml
 from minio import Minio
 from minio.error import S3Error
-# Note: Import moved to avoid circular dependency
+from .in_memory_cache import get_cache
 
 logger = structlog.get_logger(__name__)
 
 
-def _create_organized_temp_file(suffix: str, cache_dir: str = "uptime_ml_process_opt_cache") -> str:
-    """
-    Create a temporary file in an organized subdirectory for easy cleanup.
-    
-    Args:
-        suffix: File extension (e.g., '.pth', '.pkl')
-        prefix: Prefix for the temp subdirectory
-        
-    Returns:
-        Path to the created temporary file
-    """
-    # Create organized temp directory
-    base_temp_dir = tempfile.gettempdir()
-    organized_temp_dir = os.path.join(base_temp_dir, cache_dir)
-    
-    # Ensure the directory exists
-    os.makedirs(organized_temp_dir, exist_ok=True)
-    
-    # Create temp file in the organized directory
-    temp_file = tempfile.NamedTemporaryFile(
-        delete=False, 
-        suffix=suffix, 
-        dir=organized_temp_dir
-    )
-    temp_path = temp_file.name
-    temp_file.close()
-    
-    return temp_path
+
 
 
 class MinIOClient:
@@ -81,7 +54,7 @@ class MinIOClient:
             self.config_bucket = "process-optimization"
             self.models_bucket = "process-optimization"
             # Lazy import to avoid circular dependency
-            self._strategy_cache = None
+            self._cache = None
             
             logger.info("MinIO client initialized successfully", 
                        config_bucket=self.config_bucket,
@@ -90,22 +63,18 @@ class MinIOClient:
             logger.error("Failed to initialize MinIO client", error=str(e), endpoint=endpoint)
             raise
     
-    def _get_strategy_cache(self):
-        """Lazy load strategy cache to avoid circular imports."""
-        if self._strategy_cache is None:
+    def _get_cache(self):
+        """Get the cache instance."""
+        if self._cache is None:
             try:
-                logger.debug("Loading strategy cache module")
-                # Import here to avoid circular dependency
-                import importlib
-                strategy_cache_module = importlib.import_module('strategy-manager.strategy_cache')
-                get_strategy_cache = strategy_cache_module.get_strategy_cache
-                self._strategy_cache = get_strategy_cache()
-                logger.debug("Strategy cache loaded successfully")
-            except ImportError as e:
-                # If import fails, disable caching
-                logger.warning("Strategy cache not available, caching disabled", error=str(e))
+                logger.debug("Getting cache instance")
+                self._cache = get_cache()
+                logger.debug("Cache instance obtained successfully")
+            except Exception as e:
+                # If cache not available, disable caching
+                logger.warning("Cache not available, caching disabled", error=str(e))
                 return None
-        return self._strategy_cache
+        return self._cache
     
     def get_config_by_version(self, version: str) -> Dict[str, Any]:
         """
@@ -166,10 +135,10 @@ class MinIOClient:
                 raise Exception(f"Error reading config from MinIO: {e}")
         
         # Check cache first  
-        strategy_cache = self._get_strategy_cache()
-        if strategy_cache:
+        cache = self._get_cache()
+        if cache:
             logger.debug("Checking cache for config", version=version)
-            cached_config = strategy_cache.get_cached_config(version)
+            cached_config = cache.get_cached_config(version)
             if cached_config is not None:
                 logger.info("Config found in cache", version=version)
                 return cached_config
@@ -177,42 +146,46 @@ class MinIOClient:
         
         # Load from MinIO and cache
         config = _load_config_from_minio(version)
-        if strategy_cache:
+        if cache:
             logger.debug("Caching loaded config", version=version)
-            strategy_cache.set_cached_config(version, config)
+            cache.set_cached_config(version, config)
         return config
     
-    def get_pytorch_model(self, model_path: str) -> str:
+    def get_pytorch_model(self, model_path: str) -> Any:
         """
-        Download PyTorch model file (.pth) from MinIO to temporary location with caching.
+        Load PyTorch model file (.pth) from MinIO directly into memory with caching.
         
         Args:
             model_path: Path to model file in MinIO (e.g., "saved_models/model.pth")
             
         Returns:
-            Local path to downloaded model file
+            Loaded PyTorch model object
             
         Raises:
-            Exception: If model file not found or download fails
+            Exception: If model file not found or loading fails
         """
-        def _download_model_from_minio(model_path):
-            logger.info("Downloading model from MinIO", 
+        def _load_model_from_minio(model_path):
+            logger.info("Loading model from MinIO", 
                        model_path=model_path, 
                        bucket=self.models_bucket)
             
             try:
-                # Create organized temporary file
-                temp_path = _create_organized_temp_file('.pth')
-                logger.debug("Created organized temporary file", temp_path=temp_path)
+                # Get object from MinIO
+                response = self.client.get_object(self.models_bucket, model_path)
+                logger.debug("MinIO object retrieved successfully", model_path=model_path)
                 
-                # Download from MinIO
-                self.client.fget_object(self.models_bucket, model_path, temp_path)
-                logger.info("Model downloaded successfully", 
+                # Load model directly into memory using BytesIO
+                import io
+                import torch
+                model_bytes = io.BytesIO(response.data)
+                model_data = torch.load(model_bytes, map_location='cpu')
+                response.close()
+                response.release_conn()
+                
+                logger.info("Model loaded directly into memory successfully", 
                            model_path=model_path, 
-                           temp_path=temp_path,
-                           file_size=Path(temp_path).stat().st_size)
-                
-                return temp_path
+                           model_type=type(model_data).__name__)
+                return model_data
                 
             except S3Error as e:
                 if e.code == 'NoSuchKey':
@@ -220,43 +193,45 @@ class MinIOClient:
                                 model_path=model_path, 
                                 bucket=self.models_bucket)
                     raise FileNotFoundError(f"Model file {model_path} not found in MinIO bucket {self.models_bucket}")
-                logger.error("MinIO S3 error while downloading model", 
+                logger.error("MinIO S3 error while loading model", 
                             error=str(e), 
                             error_code=e.code,
                             model_path=model_path)
-                raise Exception(f"MinIO error while downloading model: {e}")
+                raise Exception(f"MinIO error while loading model: {e}")
             except Exception as e:
-                logger.error("Unexpected error downloading model from MinIO", 
+                logger.error("Unexpected error loading model from MinIO", 
                             error=str(e), 
                             model_path=model_path)
-                raise Exception(f"Error downloading model from MinIO: {e}")
+                raise Exception(f"Error loading model from MinIO: {e}")
         
         # Check cache first
-        strategy_cache = self._get_strategy_cache()
-        if strategy_cache:
+        cache = self._get_cache()
+        if cache:
             logger.debug("Checking cache for model", model_path=model_path)
-            cached_model = strategy_cache.get_cached_model(model_path)
+            cached_model = cache.get_cached_model(model_path)
             if cached_model is not None:
-                # Validate that the cached temp file still exists
-                if Path(cached_model).exists():
-                    logger.info("Model found in cache and temp file exists", 
-                               model_path=model_path, 
-                               cached_file=cached_model)
+                try:
+                    # Validate that the cached model is still usable
+                    # Try to access a basic attribute to ensure it's not corrupted
+                    _ = getattr(cached_model, '__class__', None)
+                    logger.info("Model found in cache and validated", model_path=model_path)
+                    logger.info(f"Using cached model object for: {model_path}")
                     return cached_model
-                else:
-                    logger.warning("Cached model temp file missing, invalidating cache", 
+                except Exception as e:
+                    logger.warning("Cached model is corrupted, invalidating cache", 
                                   model_path=model_path, 
-                                  missing_file=cached_model)
+                                  error=str(e))
                     # Invalidate this specific cache entry
-                    strategy_cache.invalidate_cached_model(model_path)
+                    cache.invalidate_cached_model(model_path)
             else:
                 logger.debug("Model not found in cache", model_path=model_path)
         
-        # Download from MinIO and cache
-        model = _download_model_from_minio(model_path)
-        if strategy_cache:
-            logger.debug("Caching downloaded model", model_path=model_path)
-            strategy_cache.set_cached_model(model_path, model)
+        # Load from MinIO and cache
+        model = _load_model_from_minio(model_path)
+        if cache:
+            logger.info("Caching loaded model", model_path=model_path)
+            cache.set_cached_model(model_path, model)
+            logger.info(f"Model cached in memory for: {model_path}")
         return model
     
     def get_pickle_scaler(self, scaler_path: str) -> Any:
@@ -315,31 +290,33 @@ class MinIOClient:
                 raise Exception(f"Error reading scaler from MinIO: {e}")
         
         # Check cache first
-        strategy_cache = self._get_strategy_cache()
-        if strategy_cache:
+        cache = self._get_cache()
+        if cache:
             logger.debug("Checking cache for scaler", scaler_path=scaler_path)
-            cached_scaler = strategy_cache.get_cached_scaler(scaler_path)
+            cached_scaler = cache.get_cached_scaler(scaler_path)
             if cached_scaler is not None:
                 try:
                     # Validate that the cached scaler is still usable
                     # Try to access a basic attribute to ensure it's not corrupted
                     _ = getattr(cached_scaler, '__class__', None)
                     logger.info("Scaler found in cache and validated", scaler_path=scaler_path)
+                    logger.info(f"Using cached scaler object for: {scaler_path}")
                     return cached_scaler
                 except Exception as e:
                     logger.warning("Cached scaler is corrupted, invalidating cache", 
                                   scaler_path=scaler_path, 
                                   error=str(e))
                     # Invalidate this specific cache entry
-                    strategy_cache.invalidate_cached_scaler(scaler_path)
+                    cache.invalidate_cached_scaler(scaler_path)
             else:
                 logger.debug("Scaler not found in cache", scaler_path=scaler_path)
         
         # Load from MinIO and cache
         scaler = _load_scaler_from_minio(scaler_path)
-        if strategy_cache:
-            logger.debug("Caching loaded scaler", scaler_path=scaler_path)
-            strategy_cache.set_cached_scaler(scaler_path, scaler)
+        if cache:
+            logger.info("Caching loaded scaler", scaler_path=scaler_path)
+            cache.set_cached_scaler(scaler_path, scaler)
+            logger.info(f"Scaler cached in memory for: {scaler_path}")
         return scaler
     
     def get_json_metadata(self, metadata_path: str) -> Dict[str, Any]:
@@ -397,219 +374,10 @@ class MinIOClient:
                             metadata_path=metadata_path)
                 raise Exception(f"Error reading metadata from MinIO: {e}")
         
-        # Note: Metadata caching not implemented in new strategy cache
+        # Note: Metadata caching not implemented in new cache
         # Load directly from MinIO for now
         logger.debug("Loading metadata directly from MinIO (no caching)", metadata_path=metadata_path)
         return _load_metadata_from_minio(metadata_path)
-    
-    def upload_file(self, bucket_name: str, object_name: str, file_path: str) -> bool:
-        """
-        Upload a file to MinIO bucket.
-        
-        Args:
-            bucket_name: Name of the bucket
-            object_name: Object name in the bucket
-            file_path: Local path to file to upload
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        logger.info("Uploading file to MinIO", 
-                   file_path=file_path, 
-                   object_name=object_name, 
-                   bucket=bucket_name,
-                   file_size=Path(file_path).stat().st_size if Path(file_path).exists() else "unknown")
-        
-        try:
-            self.client.fput_object(bucket_name, object_name, file_path)
-            logger.info("File uploaded successfully", 
-                       file_path=file_path, 
-                       object_name=object_name, 
-                       bucket=bucket_name)
-            return True
-        except Exception as e:
-            logger.error("Error uploading file", 
-                        error=str(e), 
-                        file_path=file_path, 
-                        object_name=object_name, 
-                        bucket=bucket_name)
-            return False
-    
-    def list_objects(self, bucket_name: str, prefix: str = "") -> list:
-        """
-        List objects in a MinIO bucket.
-        
-        Args:
-            bucket_name: Name of the bucket
-            prefix: Prefix to filter objects
-            
-        Returns:
-            List of object names
-        """
-        logger.debug("Listing objects in MinIO bucket", 
-                    bucket=bucket_name, 
-                    prefix=prefix)
-        
-        try:
-            objects = self.client.list_objects(bucket_name, prefix=prefix)
-            object_list = [obj.object_name for obj in objects]
-            logger.info("Objects listed successfully", 
-                       bucket=bucket_name, 
-                       prefix=prefix, 
-                       object_count=len(object_list))
-            return object_list
-        except Exception as e:
-            logger.error("Error listing objects", 
-                        error=str(e), 
-                        bucket=bucket_name, 
-                        prefix=prefix)
-            return []
-    
-    def cleanup_temp_files(self, file_paths: list, force_cleanup: bool = False):
-        """
-        Clean up temporary files, with smart caching awareness.
-        
-        Args:
-            file_paths: List of temporary file paths to remove
-            force_cleanup: If True, cleanup regardless of cache status
-        """
-        logger.info("Cleaning up temporary files", 
-                   file_count=len(file_paths), 
-                   force_cleanup=force_cleanup)
-        
-        for file_path in file_paths:
-            try:
-                should_cleanup = force_cleanup
-                
-                if not should_cleanup:
-                    # Check if the file is still needed by checking cache
-                    # This is a safety check for version-based persistence
-                    strategy_cache = self._get_strategy_cache()
-                    if strategy_cache:
-                        # For now, be conservative and only cleanup on force
-                        # In minute-based cycles, we want to preserve files
-                        should_cleanup = False
-                        logger.debug("Skipping temp file cleanup due to frequent cycles", 
-                                   file_path=file_path)
-                    else:
-                        should_cleanup = True
-                
-                if should_cleanup and Path(file_path).exists():
-                    Path(file_path).unlink(missing_ok=True)
-                    logger.debug("Temporary file removed", file_path=file_path)
-                elif not Path(file_path).exists():
-                    logger.debug("Temporary file already removed", file_path=file_path)
-                else:
-                    logger.debug("Temporary file preserved for cache efficiency", file_path=file_path)
-                    
-            except Exception as e:
-                logger.warning("Could not remove temporary file", 
-                              file_path=file_path, 
-                              error=str(e))
-    
-    def get_cache_stats(self) -> Dict[str, Any]:
-        """
-        Get comprehensive cache statistics.
-        
-        Returns:
-            Dictionary with cache statistics
-        """
-        logger.debug("Retrieving cache statistics")
-        strategy_cache = self._get_strategy_cache()
-        if strategy_cache:
-            stats = strategy_cache.get_cache_stats()
-            logger.debug("Cache statistics retrieved", stats_keys=list(stats.keys()) if stats else "empty")
-            return stats
-        logger.debug("No strategy cache available, returning empty stats")
-        return {}
-    
-    def clear_all_caches(self) -> None:
-        """Clear all MinIO caches."""
-        logger.info("Clearing all MinIO caches")
-        strategy_cache = self._get_strategy_cache()
-        if strategy_cache:
-            strategy_cache.clear_all_caches()
-            logger.info("All MinIO caches cleared successfully")
-        else:
-            logger.warning("No strategy cache available to clear")
-    
-    def cleanup_on_version_change(self) -> None:
-        """
-        Force cleanup of all temporary files when strategy version changes.
-        This should be called when strategy_version.yaml changes.
-        """
-        logger.info("Performing cleanup due to strategy version change")
-        
-        # Get our organized temp directory
-        base_temp_dir = tempfile.gettempdir()
-        organized_temp_dir = Path(os.path.join(base_temp_dir, "uptime_ml_process_opt_cache"))
-        
-        if not organized_temp_dir.exists():
-            logger.debug("No organized temp directory found, nothing to clean")
-            return
-        
-        # Find temp files in our organized directory
-        temp_files = []
-        for temp_file in organized_temp_dir.glob("*"):
-            if temp_file.suffix in ['.pth', '.pkl'] and temp_file.is_file():
-                try:
-                    # Check if file is old enough to be from previous versions
-                    file_age = time.time() - temp_file.stat().st_mtime
-                    if file_age > 300:  # Older than 5 minutes
-                        temp_files.append(str(temp_file))
-                except:
-                    pass
-        
-        if temp_files:
-            # Force cleanup of old temp files
-            self.cleanup_temp_files(temp_files, force_cleanup=True)
-            logger.info(f"Cleaned up {len(temp_files)} old temporary files due to version change")
-        else:
-            logger.debug("No old temporary files found for cleanup")
-    
-    def cleanup_expired_temp_files(self) -> None:
-        """Clean up expired temporary files from disk."""
-        # Redis TTL handles cleanup automatically
-        logger.debug("Cleanup of expired temp files is handled automatically by Redis TTL")
-    
-    def get_temp_directory_path(self) -> str:
-        """
-        Get the path to the organized temp directory for manual cleanup.
-        
-        Returns:
-            Path to the uptime_ml_process_opt_cache temp directory
-        """
-        base_temp_dir = tempfile.gettempdir()
-        organized_temp_dir = os.path.join(base_temp_dir, "uptime_ml_process_opt_cache")
-        return organized_temp_dir
-    
-    def manual_cleanup_temp_directory(self) -> int:
-        """
-        Manually clean up all files in the organized temp directory.
-        Useful for manual maintenance.
-        
-        Returns:
-            Number of files cleaned up
-        """
-        temp_dir = Path(self.get_temp_directory_path())
-        
-        if not temp_dir.exists():
-            logger.info("No temp directory found, nothing to clean")
-            return 0
-        
-        files_cleaned = 0
-        for temp_file in temp_dir.glob("*"):
-            if temp_file.is_file():
-                try:
-                    temp_file.unlink()
-                    files_cleaned += 1
-                    logger.debug("Deleted temp file", file_path=str(temp_file))
-                except Exception as e:
-                    logger.warning("Failed to delete temp file", 
-                                 file_path=str(temp_file), error=str(e))
-        
-        logger.info(f"Manual cleanup completed: {files_cleaned} files removed")
-        return files_cleaned
 
 
 def get_minio_client(configuration: Dict = None) -> MinIOClient:
