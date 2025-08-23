@@ -6,7 +6,7 @@ A high-performance process optimization service that uses machine learning model
 
 ### Prerequisites
 - Python 3.8+
-- Redis (for caching)
+
 - MinIO (for model storage)
 - PostgreSQL (for data storage)
 
@@ -30,7 +30,7 @@ This service follows a clean, modular architecture:
 
 - **🎯 Strategy-Based Optimization**: Configurable optimization strategies with multiple skill types
 - **🧠 ML Model Integration**: PyTorch models with intelligent caching from MinIO
-- **⚡ Redis Caching**: Fast in-memory caching for models, configs, and data
+- **⚡ In-Memory Caching**: Fast in-memory caching for models, configs, and data
 - **🔄 Multiple Run Modes**: Continuous optimization, API server, or hybrid mode
 - **📊 Real-time Data**: PostgreSQL integration for live process data
 
@@ -40,7 +40,7 @@ This service follows a clean, modular architecture:
 - **Continuous Optimization**: Automated optimization cycles every 5 minutes
 - **REST API**: On-demand optimization via HTTP endpoints
 - **Strategy Management**: Version-controlled optimization strategies from MinIO
-- **Intelligent Caching**: Redis-based caching with TTL and version awareness
+- **Intelligent Caching**: In-memory caching with version awareness
 - **Multi-Modal Deployment**: Run as continuous service, API server, or both
 
 ### Optimization Skills
@@ -150,7 +150,7 @@ uptime_ml_process_optimization/
 │   │   └── skills/             # Optimization skills
 │   ├── storage/
 │   │   ├── minio.py           # MinIO integration
-│   │   ├── redis.py           # Redis caching
+
 │   │   └── psql.py            # PostgreSQL connector
 │   └── strategy-manager/
 │       └── strategy_manager.py # Strategy version management
@@ -203,7 +203,7 @@ The service provides comprehensive logging and monitoring:
 
 ### Common Issues
 
-1. **Cache Miss Issues**: Ensure Redis is running and accessible
+1. **Cache Miss Issues**: Check memory usage and restart if needed
 2. **Model Loading Errors**: Verify MinIO connection and bucket permissions
 3. **Database Timeouts**: Check PostgreSQL connection settings
 4. **Optimization Failures**: Review strategy configuration and variable constraints

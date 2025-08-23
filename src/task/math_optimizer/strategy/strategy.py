@@ -8,10 +8,10 @@ from .skills.composition import CompositionSkill
 from .skills.optimizer import OptimizationSkill
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
 # Import via alias to handle hyphenated directory name
 import importlib
-strategy_manager_module = importlib.import_module('strategy-manager.strategy_manager')
+strategy_manager_module = importlib.import_module('task.math_optimizer.strategy-manager.strategy_manager')
 StrategyManager = strategy_manager_module.StrategyManager
 
 class OptimizationStrategy:

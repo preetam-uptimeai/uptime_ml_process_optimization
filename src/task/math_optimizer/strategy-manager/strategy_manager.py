@@ -1,14 +1,19 @@
 import yaml
 import structlog
+import sys
+import os
 from datetime import datetime
 from typing import Optional, Dict
+
+# Add src to path for imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
 from storage.minio import get_minio_client
-from .strategy_cache import get_strategy_cache
+from storage.in_memory_cache import get_cache
 
 class StrategyManager:
     def __init__(self, configuration: Dict = None, 
-                 timestamp_file: str = 'src/strategy-manager/last_run_timestamp.yaml', 
-                 deployed_config_file: str = 'src/strategy-manager/strategy_version.yaml'):
+                 timestamp_file: str = 'src/task/math_optimizer/strategy-manager/last_run_timestamp.yaml', 
+                 deployed_config_file: str = 'src/task/math_optimizer/strategy-manager/strategy_version.yaml'):
         """Initialize StrategyManager with configuration from config.yaml.
         
         Args:
@@ -20,7 +25,7 @@ class StrategyManager:
         self.timestamp_file = timestamp_file
         self.deployed_config_file = deployed_config_file
         self.minio_client = get_minio_client(configuration)
-        self.strategy_cache = get_strategy_cache()
+        self.cache = get_cache()
         self.logger = structlog.get_logger("process_optimization.strategy_manager")
 
     def get_last_run_timestamp(self) -> Optional[datetime]:
@@ -35,7 +40,7 @@ class StrategyManager:
                 print(f"Warning: Could not read last_run_timestamp from file: {e}")
             return None
         
-        return self.strategy_cache.get_last_run_timestamp_with_cache(_load_timestamp_from_file)
+        return self.cache.get_last_run_timestamp_with_cache(_load_timestamp_from_file)
 
     def update_last_run_timestamp(self, timestamp: datetime):
         """Write the last run timestamp to config file and update cache"""
@@ -45,7 +50,7 @@ class StrategyManager:
             yaml.dump(config, f)
         
         # Update cache
-        self.strategy_cache.set_cached_last_run_timestamp(timestamp)
+        self.cache.set_cached_last_run_timestamp(timestamp)
 
     def get_deployed_config_version(self) -> str:
         """Read the deployed strategy version from strategy file"""
@@ -67,12 +72,10 @@ class StrategyManager:
             self.logger.info(f"Loading config version {version} from MinIO...")
             
             # Check if version changed and invalidate cache if needed
-            cache_invalidated = self.strategy_cache.check_version_and_invalidate_if_needed(version)
+            cache_invalidated = self.cache.check_version_and_invalidate_if_needed(version)
             if cache_invalidated:
                 self.logger.info("Cache was invalidated due to version change")
-                # Also cleanup old temporary files when version changes
-                self.logger.info("Cleaning up old temporary files due to version change")
-                self.minio_client.cleanup_on_version_change()
+                # Cache cleanup is handled automatically in memory
             
             # Load config from MinIO (will use cache if available)
             config = self.minio_client.get_config_by_version(version)

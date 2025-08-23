@@ -9,14 +9,13 @@ import os
 from datetime import datetime, timedelta
 
 # Add the project root to Python path
-sys.path.append(os.path.dirname(__file__))
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 # Import via alias to handle hyphenated directory name
 import importlib
-strategy_manager_module = importlib.import_module('strategy-manager.strategy_manager')
-strategy_cache_module = importlib.import_module('strategy-manager.strategy_cache')
+strategy_manager_module = importlib.import_module('task.math_optimizer.strategy-manager.strategy_manager')
+from storage.in_memory_cache import get_cache
 StrategyManager = strategy_manager_module.StrategyManager
-get_strategy_cache = strategy_cache_module.get_strategy_cache
 
 
 def test_timestamp_caching():
@@ -24,11 +23,11 @@ def test_timestamp_caching():
     print("🧪 Testing Timestamp Caching")
     print("=" * 60)
     
-    strategy_cache = get_strategy_cache()
+    cache = get_cache()
     strategy_manager = StrategyManager()
     
     # Clear cache to start fresh
-    strategy_cache.clear_all_caches()
+    cache.clear_all_caches()
     
     try:
         # Test 1: First timestamp load (should read from file)
@@ -44,7 +43,7 @@ def test_timestamp_caching():
             print("   ⚠️ No timestamp found in file")
         
         # Check cache stats
-        stats = strategy_cache.get_cache_stats()
+        stats = cache.get_cache_stats()
         cached_timestamp = stats.get('cached_last_run_timestamp')
         print(f"   📊 Cached timestamp: {cached_timestamp}")
         
@@ -74,7 +73,7 @@ def test_timestamp_caching():
         strategy_manager.update_last_run_timestamp(new_timestamp)
         
         # Verify cache was updated
-        stats_after_update = strategy_cache.get_cache_stats()
+        stats_after_update = cache.get_cache_stats()
         updated_cached_timestamp = stats_after_update.get('cached_last_run_timestamp')
         
         cache_updated = updated_cached_timestamp == new_timestamp
@@ -112,21 +111,21 @@ def test_cache_invalidation_on_version_change():
     print("\n🧪 Testing Timestamp Cache Invalidation on Version Change")
     print("=" * 60)
     
-    strategy_cache = get_strategy_cache()
+    cache = get_cache()
     
     try:
         # Set up initial timestamp cache
         test_timestamp = datetime.now()
-        strategy_cache.set_cached_last_run_timestamp(test_timestamp)
+        cache.set_cached_last_run_timestamp(test_timestamp)
         
         print(f"1️⃣ Set initial cached timestamp: {test_timestamp}")
         
-        # Note: Version change detection not implemented in Redis-based cache
-        # Redis handles TTL automatically, so manual version-based invalidation is not needed
-        print("2️⃣ Redis cache handles TTL automatically - manual version invalidation not needed")
+        # Note: Version change detection implemented in in-memory cache
+        # In-memory cache handles invalidation automatically
+        print("2️⃣ In-memory cache handles invalidation automatically")
         
         # Test cache clearing instead
-        cleared_stats = strategy_cache.clear_all_caches()
+        cleared_stats = cache.clear_all_caches()
         print(f"   🗑️ Cleared cache items: {cleared_stats}")
         
         timestamp_cleared = sum(cleared_stats.values()) > 0
@@ -144,12 +143,12 @@ def demonstrate_cache_benefits():
     print("\n🧪 Demonstrating Timestamp Cache Benefits")
     print("=" * 60)
     
-    strategy_cache = get_strategy_cache()
+    cache = get_cache()
     strategy_manager = StrategyManager()
     
     try:
         # Clear cache first
-        strategy_cache.clear_all_caches()
+        cache.clear_all_caches()
         
         # Simulate multiple timestamp accesses
         total_time_with_cache = 0
@@ -171,7 +170,7 @@ def demonstrate_cache_benefits():
         print(f"   Average time per access: {total_time_with_cache/num_accesses:.4f} seconds")
         
         # Show final cache stats
-        stats = strategy_cache.get_cache_stats()
+        stats = cache.get_cache_stats()
         print(f"   📊 Final cached timestamp: {stats.get('cached_last_run_timestamp')}")
         
         return True

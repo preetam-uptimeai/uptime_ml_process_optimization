@@ -16,14 +16,13 @@ from typing import Dict, Any, Optional
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-# Add project root to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+# Add src to path for absolute imports
+src_path = os.path.dirname(os.path.dirname(__file__))
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
 
-from strategy.strategy import OptimizationStrategy
-# Import via alias to handle hyphenated directory name
-import importlib
-strategy_manager_module = importlib.import_module('strategy-manager.strategy_cache')
-get_strategy_cache = strategy_manager_module.get_strategy_cache
+from task.math_optimizer.strategy.strategy import OptimizationStrategy
+from storage.in_memory_cache import get_cache
 
 
 class APIService:
@@ -299,8 +298,8 @@ class APIService:
     
     def _health_check(self):
         """Health check endpoint."""
-        strategy_cache = get_strategy_cache()
-        cache_stats = strategy_cache.get_cache_stats()
+        cache = get_cache()
+        cache_stats = cache.get_cache_stats()
         
         return jsonify({
             'status': 'healthy',
@@ -365,8 +364,8 @@ class APIService:
     def _get_cache_stats(self):
         """Get current cache statistics."""
         try:
-            strategy_cache = get_strategy_cache()
-            stats = strategy_cache.get_cache_stats()
+            cache = get_cache()
+            stats = cache.get_cache_stats()
             
             # Format stats for API response
             formatted_stats = {
@@ -399,8 +398,8 @@ class APIService:
     def _clear_cache(self):
         """Clear all caches."""
         try:
-            strategy_cache = get_strategy_cache()
-            strategy_cache.clear_all_caches()
+            cache = get_cache()
+            cache.clear_all_caches()
             
             return jsonify({
                 'status': 'success',
